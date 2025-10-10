@@ -565,9 +565,8 @@ if __name__ == "__main__":
                 status_val = pick_first(row, ["status_paket", "status"])
 
                 harga_display = harga_raw if harga_raw is not None else "0"
-                
-                is_cod = is_paket_cod(status_val)
                 serial_success = send_serial_data("buka_1")
+                is_cod = is_paket_cod(status_val)
                 
                 # Caption untuk gambar utama
                 cap_lines = [

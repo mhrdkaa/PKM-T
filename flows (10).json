@@ -1,0 +1,499 @@
+[
+    {
+        "id": "f91a64f839823596",
+        "type": "tab",
+        "label": "PKM",
+        "disabled": false,
+        "info": "",
+        "env": []
+    },
+    {
+        "id": "9f85246e969332e6",
+        "type": "mysql",
+        "z": "f91a64f839823596",
+        "mydb": "47f3c27fe0377ab8",
+        "name": "",
+        "x": 1160,
+        "y": 360,
+        "wires": [
+            []
+        ]
+    },
+    {
+        "id": "a2bbcf2ae2eee2bf",
+        "type": "rbe",
+        "z": "f91a64f839823596",
+        "name": "",
+        "func": "rbe",
+        "gap": "",
+        "start": "",
+        "inout": "out",
+        "septopics": true,
+        "property": "payload",
+        "topi": "topic",
+        "x": 410,
+        "y": 240,
+        "wires": [
+            [
+                "a26b154f565d053a"
+            ]
+        ]
+    },
+    {
+        "id": "a26b154f565d053a",
+        "type": "function",
+        "z": "f91a64f839823596",
+        "name": "function 25",
+        "func": "// Expect: msg.payload = \"6922794772113\" (string/angka langsung)\nif (msg.payload === undefined || msg.payload === null) {\n    node.status({ fill: \"red\", shape: \"ring\", text: \"resi undefined\" });\n    return null;\n}\n// barcode/QR sering ada newline -> trim\nconst resi = String(msg.payload).trim();\nflow.set('resi', resi);\nnode.status({ fill: \"green\", shape: \"dot\", text: \"resi tersimpan: \" + resi });\nreturn null; // stop di sini\n",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 570,
+        "y": 240,
+        "wires": [
+            [
+                "d842039e0d055d11"
+            ]
+        ]
+    },
+    {
+        "id": "6c62f21e7523cec7",
+        "type": "debug",
+        "z": "f91a64f839823596",
+        "name": "debug 351",
+        "active": true,
+        "tosidebar": true,
+        "console": false,
+        "tostatus": false,
+        "complete": "false",
+        "statusVal": "",
+        "statusType": "auto",
+        "x": 1170,
+        "y": 440,
+        "wires": []
+    },
+    {
+        "id": "4a7ebd836dfddd23",
+        "type": "ui-number-input",
+        "z": "f91a64f839823596",
+        "group": "807fee9fa0dc11b9",
+        "name": "INPUT HARGA",
+        "label": "INPUT HARGA",
+        "order": 4,
+        "width": 0,
+        "height": 0,
+        "topic": "topic",
+        "topicType": "msg",
+        "min": 0,
+        "max": "9999999999999999999999",
+        "step": 1,
+        "tooltip": "",
+        "passthru": true,
+        "sendOnBlur": true,
+        "sendOnEnter": true,
+        "className": "",
+        "clearable": false,
+        "icon": "",
+        "iconPosition": "left",
+        "iconInnerPosition": "inside",
+        "spinner": "default",
+        "x": 240,
+        "y": 360,
+        "wires": [
+            [
+                "e4e35b0d298a3c24"
+            ]
+        ]
+    },
+    {
+        "id": "2d0213d71325d8a1",
+        "type": "function",
+        "z": "f91a64f839823596",
+        "name": "function 26",
+        "func": "// Expect: msg.payload = \"NamaBarang\" (string langsung)\nif (msg.payload === undefined || msg.payload === null) {\n    node.status({ fill: \"red\", shape: \"ring\", text: \"barang undefined\" });\n    return null;\n}\nconst barang = String(msg.payload).trim();\nflow.set('barang', barang);\nnode.status({ fill: \"green\", shape: \"dot\", text: \"barang tersimpan: \" + barang });\nreturn null;\n",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 570,
+        "y": 300,
+        "wires": [
+            [
+                "96df9fe6683a503e"
+            ]
+        ]
+    },
+    {
+        "id": "0d9ea302f4d7a5ba",
+        "type": "function",
+        "z": "f91a64f839823596",
+        "name": "function 27",
+        "func": "// Expect: msg.payload = 12000 atau \"12.000\" / \"12,000\"\nif (msg.payload === undefined || msg.payload === null) {\n    node.status({ fill: \"red\", shape: \"ring\", text: \"harga undefined\" });\n    return null;\n}\nlet raw = String(msg.payload).trim();\n// Normalisasi angka lokal: buang pemisah ribuan, ganti koma desimal ke titik\nraw = raw.replace(/\\./g, '').replace(',', '.');\nconst hargaNum = Number(raw);\nif (Number.isNaN(hargaNum)) {\n    node.status({ fill: \"red\", shape: \"ring\", text: \"harga bukan angka\" });\n    node.error(\"Harga harus numerik. Diterima: \" + msg.payload, msg);\n    return null;\n}\nflow.set('harga', hargaNum);\nnode.status({ fill: \"green\", shape: \"dot\", text: \"harga tersimpan: \" + hargaNum });\nreturn null;\n",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 570,
+        "y": 360,
+        "wires": [
+            [
+                "9529cb99485a346f"
+            ]
+        ]
+    },
+    {
+        "id": "2ecda9d7feb5efbd",
+        "type": "ui-text-input",
+        "z": "f91a64f839823596",
+        "group": "807fee9fa0dc11b9",
+        "name": "INPUT BARANG",
+        "label": "INPUT BARANG",
+        "order": 2,
+        "width": 0,
+        "height": 0,
+        "topic": "topic",
+        "topicType": "msg",
+        "mode": "text",
+        "tooltip": "",
+        "delay": 300,
+        "passthru": true,
+        "sendOnDelay": false,
+        "sendOnBlur": true,
+        "sendOnEnter": true,
+        "className": "",
+        "clearable": false,
+        "sendOnClear": false,
+        "icon": "",
+        "iconPosition": "left",
+        "iconInnerPosition": "inside",
+        "x": 230,
+        "y": 300,
+        "wires": [
+            [
+                "4f52bd6a883bfe25"
+            ]
+        ]
+    },
+    {
+        "id": "4f52bd6a883bfe25",
+        "type": "rbe",
+        "z": "f91a64f839823596",
+        "name": "",
+        "func": "rbe",
+        "gap": "",
+        "start": "",
+        "inout": "out",
+        "septopics": true,
+        "property": "payload",
+        "topi": "topic",
+        "x": 410,
+        "y": 300,
+        "wires": [
+            [
+                "2d0213d71325d8a1"
+            ]
+        ]
+    },
+    {
+        "id": "e4e35b0d298a3c24",
+        "type": "rbe",
+        "z": "f91a64f839823596",
+        "name": "",
+        "func": "rbe",
+        "gap": "",
+        "start": "",
+        "inout": "out",
+        "septopics": true,
+        "property": "payload",
+        "topi": "topic",
+        "x": 410,
+        "y": 360,
+        "wires": [
+            [
+                "0d9ea302f4d7a5ba"
+            ]
+        ]
+    },
+    {
+        "id": "9b4e76e2b8719f8f",
+        "type": "function",
+        "z": "f91a64f839823596",
+        "name": "function 28",
+        "func": "var resi;\nvar barang;\nvar harga;\n\nresi = msg.payload.resi;\nbarang = msg.payload.barang;\nharga = msg.payload.harga;\n\n// Validasi nilai suhu dan kelembaban\nif (resi === undefined || barang === undefined || harga === undefined) {\n    node.error(\"Resi is undefined\", msg);\n    return null; // Hentikan eksekusi jika nilai tidak valid\n}\n\n// Buat perintah SQL\nmsg.topic = \"INSERT INTO `resi_db`(`resi`, `barang`, `harga`, `time`) VALUES (\" + resi + \", \" + barang + \", \" + harga + \", current_timestamp())\";\n\nreturn msg;",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 970,
+        "y": 360,
+        "wires": [
+            []
+        ]
+    },
+    {
+        "id": "27df605ceed27382",
+        "type": "ui-button",
+        "z": "f91a64f839823596",
+        "group": "807fee9fa0dc11b9",
+        "name": "",
+        "label": "Send",
+        "order": 1,
+        "width": 0,
+        "height": 0,
+        "emulateClick": false,
+        "tooltip": "",
+        "color": "",
+        "bgcolor": "",
+        "className": "",
+        "icon": "",
+        "iconPosition": "left",
+        "payload": "",
+        "payloadType": "num",
+        "topic": "topic",
+        "topicType": "msg",
+        "buttonColor": "",
+        "textColor": "",
+        "iconColor": "",
+        "enableClick": true,
+        "enablePointerdown": false,
+        "pointerdownPayload": "",
+        "pointerdownPayloadType": "str",
+        "enablePointerup": false,
+        "pointerupPayload": "",
+        "pointerupPayloadType": "str",
+        "x": 790,
+        "y": 460,
+        "wires": [
+            [
+                "930d26e6268b3f84"
+            ]
+        ]
+    },
+    {
+        "id": "930d26e6268b3f84",
+        "type": "function",
+        "z": "f91a64f839823596",
+        "name": "function 29",
+        "func": "// DIPICU tombol \"Send\"\nconst resi = flow.get('resi');\nconst barang = flow.get('barang');\nconst harga = flow.get('harga');\n\nconst miss = [];\nif (resi === undefined) miss.push(\"resi\");\nif (barang === undefined) miss.push(\"barang\");\nif (harga === undefined) miss.push(\"harga\");\nif (miss.length) {\n    node.status({ fill: \"red\", shape: \"ring\", text: \"Data kurang: \" + miss.join(\", \") });\n    return null;\n}\n\n// Normalisasi tipe\nconst resiStr = String(resi).trim();\nconst barangStr = String(barang).trim();\nconst hargaNum = Number(harga);\nif (!resiStr || !barangStr || Number.isNaN(hargaNum)) {\n    node.status({ fill: \"red\", shape: \"ring\", text: \"Validasi gagal\" });\n    return null;\n}\n\n// ✅ Prepared statement untuk node-red-node-mysql\n//   WAJIB: msg.payload = ARRAY parameter\nmsg.topic = \"INSERT INTO `resi_db` (`resi`, `barang`, `harga`, `time`) VALUES (?, ?, ?, CURRENT_TIMESTAMP())\";\nmsg.payload = [resiStr, barangStr, hargaNum];\n\nnode.status({ fill: \"blue\", shape: \"dot\", text: \"mengirim ke DB...\" });\nreturn msg;\n",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 970,
+        "y": 400,
+        "wires": [
+            [
+                "9f85246e969332e6",
+                "6c62f21e7523cec7"
+            ]
+        ]
+    },
+    {
+        "id": "d842039e0d055d11",
+        "type": "debug",
+        "z": "f91a64f839823596",
+        "name": "debug 352",
+        "active": true,
+        "tosidebar": true,
+        "console": false,
+        "tostatus": false,
+        "complete": "false",
+        "statusVal": "",
+        "statusType": "auto",
+        "x": 750,
+        "y": 240,
+        "wires": []
+    },
+    {
+        "id": "96df9fe6683a503e",
+        "type": "debug",
+        "z": "f91a64f839823596",
+        "name": "debug 353",
+        "active": true,
+        "tosidebar": true,
+        "console": false,
+        "tostatus": false,
+        "complete": "false",
+        "statusVal": "",
+        "statusType": "auto",
+        "x": 750,
+        "y": 300,
+        "wires": []
+    },
+    {
+        "id": "9529cb99485a346f",
+        "type": "debug",
+        "z": "f91a64f839823596",
+        "name": "debug 354",
+        "active": true,
+        "tosidebar": true,
+        "console": false,
+        "tostatus": false,
+        "complete": "false",
+        "statusVal": "",
+        "statusType": "auto",
+        "x": 750,
+        "y": 400,
+        "wires": []
+    },
+    {
+        "id": "9752a19b56592065",
+        "type": "ui-text-input",
+        "z": "f91a64f839823596",
+        "group": "807fee9fa0dc11b9",
+        "name": "INPUT RESI",
+        "label": "INPUT RESI",
+        "order": 3,
+        "width": 0,
+        "height": 0,
+        "topic": "topic",
+        "topicType": "msg",
+        "mode": "text",
+        "tooltip": "",
+        "delay": 300,
+        "passthru": true,
+        "sendOnDelay": false,
+        "sendOnBlur": true,
+        "sendOnEnter": true,
+        "className": "",
+        "clearable": false,
+        "sendOnClear": false,
+        "icon": "",
+        "iconPosition": "left",
+        "iconInnerPosition": "inside",
+        "x": 210,
+        "y": 240,
+        "wires": [
+            [
+                "a2bbcf2ae2eee2bf"
+            ]
+        ]
+    },
+    {
+        "id": "47f3c27fe0377ab8",
+        "type": "MySQLdatabase",
+        "name": "resi_db",
+        "host": "127.0.0.1",
+        "port": "3306",
+        "db": "pkm_db",
+        "tz": "",
+        "charset": "UTF8"
+    },
+    {
+        "id": "807fee9fa0dc11b9",
+        "type": "ui-group",
+        "name": "Dashboard",
+        "page": "8b16878150f7fa6a",
+        "width": "6",
+        "height": "1",
+        "order": 1,
+        "showTitle": true,
+        "className": "",
+        "visible": "true",
+        "disabled": "false",
+        "groupType": "default"
+    },
+    {
+        "id": "8b16878150f7fa6a",
+        "type": "ui-page",
+        "name": "PKM",
+        "ui": "802f431da43afd8a",
+        "path": "/page4",
+        "icon": "home",
+        "layout": "grid",
+        "theme": "9dc687687de3eda3",
+        "breakpoints": [
+            {
+                "name": "Default",
+                "px": "0",
+                "cols": "3"
+            },
+            {
+                "name": "Tablet",
+                "px": "576",
+                "cols": "6"
+            },
+            {
+                "name": "Small Desktop",
+                "px": "768",
+                "cols": "9"
+            },
+            {
+                "name": "Desktop",
+                "px": "1024",
+                "cols": "12"
+            }
+        ],
+        "order": 1,
+        "className": "",
+        "visible": true,
+        "disabled": false
+    },
+    {
+        "id": "802f431da43afd8a",
+        "type": "ui-base",
+        "name": "Auto Supply Dashboard",
+        "path": "/dashboard",
+        "appIcon": "",
+        "includeClientData": true,
+        "acceptsClientConfig": [
+            "ui-notification",
+            "ui-control",
+            "ui-led",
+            "ui-iframe",
+            "ui-flowviewer",
+            "ui-template",
+            "ui-markdown",
+            "ui-gauge",
+            "ui-form",
+            "ui-text-input",
+            "ui-number-input",
+            "ui-file-input",
+            "ui-button",
+            "ui-button-group",
+            "ui-dropdown",
+            "ui-radio-group",
+            "ui-switch",
+            "ui-slider",
+            "ui-text",
+            "ui-chart",
+            "ui-table"
+        ],
+        "showPathInSidebar": false,
+        "showPageTitle": true,
+        "navigationStyle": "default",
+        "titleBarStyle": "default",
+        "showReconnectNotification": false,
+        "notificationDisplayTime": "5",
+        "showDisconnectNotification": false
+    },
+    {
+        "id": "9dc687687de3eda3",
+        "type": "ui-theme",
+        "name": "Default Theme",
+        "colors": {
+            "surface": "#ffffff",
+            "primary": "#0604af",
+            "bgPage": "#cfcfcf",
+            "groupBg": "#ffffff",
+            "groupOutline": "#cccccc"
+        },
+        "sizes": {
+            "pagePadding": "12px",
+            "groupGap": "12px",
+            "groupBorderRadius": "4px",
+            "widgetGap": "12px"
+        }
+    }
+]

@@ -1,0 +1,6 @@
+opencv-python
+requests
+psycopg2-binary
+python-dotenv
+python-telegram-bot
+mysql-connector-python

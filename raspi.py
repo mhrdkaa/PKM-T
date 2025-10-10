@@ -460,7 +460,6 @@ def get_resi_detail(cursor, resi_code):
     """Cari data di tabel paket berdasarkan no_resi"""
     cursor.execute("SELECT * FROM paket WHERE no_resi = %s LIMIT 1", (resi_code,))
     result = cursor.fetchone()
-    
     if result:
         columns = [desc[0] for desc in cursor.description]
         return dict(zip(columns, result))
@@ -558,7 +557,6 @@ if __name__ == "__main__":
             if not data: 
                 continue
             print("Hasil Scan:", data)
-
             row = get_resi_detail(cursor, data)
             found = row is not None
 
@@ -571,6 +569,7 @@ if __name__ == "__main__":
                 harga_display = harga_raw if harga_raw is not None else "0"
                 
                 is_cod = is_paket_cod(status_val)
+                send_serial_data("buka_1")
                 
                 # Caption untuk gambar utama
                 cap_lines = [

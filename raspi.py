@@ -93,10 +93,8 @@ def send_serial_data(data):
     ser = get_serial_connection()
     if ser is None:
         return False
-    
     try:
         ser.write(f"{data}\n".encode())
-        print(f"Data dikirim via serial: {data}")
         return True
     except Exception as e:
         print(f"Error kirim serial: {e}")
@@ -569,7 +567,7 @@ if __name__ == "__main__":
                 harga_display = harga_raw if harga_raw is not None else "0"
                 
                 is_cod = is_paket_cod(status_val)
-                send_serial_data("buka_1")
+                serial_success = send_serial_data("buka_1")
                 
                 # Caption untuk gambar utama
                 cap_lines = [

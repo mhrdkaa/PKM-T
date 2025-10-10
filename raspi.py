@@ -509,30 +509,23 @@ if __name__ == "__main__":
             print("Tidak bisa melanjutkan, bot Telegram tidak bisa diakses")
             exit(1)
         
-        # Load YOLO model di AWAL
         print("Loading YOLO model...")
         yolo_model = init_yolo_model("PKM-KC.pt")
         
         if yolo_model is None:
             print("YOLO model gagal di-load, sistem tetap berjalan tanpa YOLO")
         
-        # Mulai thread untuk handle callback Telegram
         callback_thread = threading.Thread(target=handle_telegram_callbacks, daemon=True)
         callback_thread.start()
         print("Thread callback handler started")
         
-        # Deteksi kamera yang tersedia
         available_cams = list_available_cameras()
         if not available_cams:
             print("Tidak ada kamera yang terdeteksi!")
             exit(1)
         
         print(f"Kamera yang tersedia: {available_cams}")
-        
-        # Inisialisasi kamera utama (untuk QR code)
         main_camera = init_camera(available_cams[0], camera_name="Main Camera")
-        
-        # Handle single camera scenario untuk Raspberry Pi
         if len(available_cams) > 1:
             try:
                 yolo_camera = init_camera(available_cams[1], camera_name="YOLO Camera")
@@ -557,7 +550,6 @@ if __name__ == "__main__":
             print("Hasil Scan:", data)
             row = get_resi_detail(cursor, data)
             found = row is not None
-
             if found:
                 resi_val   = pick_first(row, ["no_resi", "resi"])
                 barang_val = pick_first(row, ["nama_paket", "barang", "nama_barang"])
@@ -565,10 +557,8 @@ if __name__ == "__main__":
                 status_val = pick_first(row, ["status_paket", "status"])
 
                 harga_display = harga_raw if harga_raw is not None else "0"
-                serial_success = send_serial_data("buka_1")
                 is_cod = is_paket_cod(status_val)
                 
-                # Caption untuk gambar utama
                 cap_lines = [
                     "Resi terverifikasi",
                     f"Resi  : {resi_val or '-'}",
@@ -580,7 +570,6 @@ if __name__ == "__main__":
                 caption = "\n".join(cap_lines)
 
                 try:
-                    # 1. Capture dan kirim gambar utama dulu
                     img_path = capture_normal_frame(
                         main_camera,
                         save_dir="captures",
@@ -589,32 +578,27 @@ if __name__ == "__main__":
                     )
                     
                     print(f"Gambar utama tersimpan: {img_path}")
-                    
+                    serial_success = send_serial_data("buka_1")
                     photo_success = send_telegram_photos(TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, [img_path], caption=caption)
                     
                     if photo_success:
                         print("Foto utama berhasil terkirim ke Telegram.")
                         
-                        # 2. Jika COD, proses YOLO + Button
                         if is_cod:
                             print("Paket COD - Menunggu sinyal button dari Arduino...")
                             
                             if tunggu_perintah_dari_arduino():
                                 print("Mengambil gambar YOLO...")
                                 
-                                # 3. Capture gambar YOLO (langsung ketika dapat sinyal button)
                                 if yolo_model is not None:
                                     yolo_path, detection_count = capture_yolo_frame(yolo_camera, yolo_model)
                                     print(f"Gambar YOLO tersimpan: {yolo_path}")
                                     
-                                    # 4. Kirim gambar YOLO
                                     yolo_caption = f"YOLO DETECTION\nDetections: {detection_count}\nTime: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
                                     yolo_success = send_telegram_photos(TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, [yolo_path], yolo_caption)
                                     
                                     if yolo_success:
                                         print("Gambar YOLO berhasil dikirim")
-                                        
-                                        # 5. Kirim button setelah gambar YOLO
                                         print("Mengirim inline button ke Telegram...")
                                         button_success = send_telegram_buttons(
                                             TELEGRAM_BOT_TOKEN, 

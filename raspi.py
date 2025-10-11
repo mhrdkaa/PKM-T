@@ -136,14 +136,14 @@ def handle_telegram_callbacks():
                             
                             edit_url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/editMessageText"
                             
-                            if callback_data.startswith("R1A"):
-                                new_text = "Pintu Utama DIPILIH\nMengirim perintah ke sistem..."
+                            if callback_data.startswith("buka_1"):
+                                new_text = "Kisi 1 DIPILIH\nMengirim perintah ke sistem..."
                                 kisi_command = "R1A"
-                            elif callback_data.startswith("R2A"):
-                                new_text = "KISI 1 DIPILIH\nMengirim perintah ke sistem..."
+                            elif callback_data.startswith("buka_2"):
+                                new_text = "KISI 2 DIPILIH\nMengirim perintah ke sistem..."
                                 kisi_command = "R2A"
                             elif callback_data.startswith("R3A"):
-                                new_text = "KISI 2 DIPILIH\nMengirim perintah ke sistem..."
+                                new_text = "Pintu Utama DIPILIH\nMengirim perintah ke sistem..."
                                 kisi_command = "R3A"
                             elif callback_data.startswith("R4A"):
                                 new_text = "Pintu Belakang\nMengirim perintah ke sistem..."

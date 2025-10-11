@@ -119,7 +119,6 @@ def handle_telegram_callbacks():
                     for update in data["result"]:
                         last_update_id = update["update_id"]
                         
-                        # Handle callback query (inline button click)
                         if "callback_query" in update:
                             callback_data = update["callback_query"]["data"]
                             message_id = update["callback_query"]["message"]["message_id"]
@@ -127,7 +126,6 @@ def handle_telegram_callbacks():
                             
                             print(f"CALLBACK DITERIMA: {callback_data}")
                             
-                            # Answer the callback query (remove loading)
                             answer_url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/answerCallbackQuery"
                             answer_data = {
                                 "callback_query_id": update["callback_query"]["id"],
@@ -136,15 +134,23 @@ def handle_telegram_callbacks():
                             }
                             requests.post(answer_url, json=answer_data, verify=False)
                             
-                            # Update message text to show selection
                             edit_url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/editMessageText"
                             
-                            if callback_data.startswith("kisi_1"):
+                            if callback_data.startswith("R1A"):
+                                new_text = "Pintu Utama DIPILIH\nMengirim perintah ke sistem..."
+                                kisi_command = "R1A"
+                            elif callback_data.startswith("R2A"):
                                 new_text = "KISI 1 DIPILIH\nMengirim perintah ke sistem..."
-                                kisi_command = "kisi_1"
-                            elif callback_data.startswith("kisi_2"):
+                                kisi_command = "R2A"
+                            elif callback_data.startswith("R3A"):
                                 new_text = "KISI 2 DIPILIH\nMengirim perintah ke sistem..."
-                                kisi_command = "kisi_2"
+                                kisi_command = "R3A"
+                            elif callback_data.startswith("R4A"):
+                                new_text = "Pintu Belakang\nMengirim perintah ke sistem..."
+                                kisi_command = "R4A"
+                            elif callback_data.startswith("R5A"):
+                                new_text = "Pintu Atas\nMengirim perintah ke sistem..."
+                                kisi_command = "R5A"
                             else:
                                 continue
                             

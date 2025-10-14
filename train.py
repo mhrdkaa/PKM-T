@@ -31,7 +31,7 @@ def main():
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, frame_width)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, frame_height)
 
-    model = YOLO("PKM-KC.pt")
+    model = YOLO("best.pt")
 
     box_annotator = sv.BoxAnnotator(
         thickness=2,

@@ -7,13 +7,13 @@ import threading
 import numpy as np
 from ultralytics import YOLO
 import supervision as sv
+import glob
 try:
     from dotenv import load_dotenv
     load_dotenv()
 except Exception:
     pass
 
-IOT_PORT = "/dev/ttyUSB0"  
 IOT_BAUD = 115200
 POSTGRES_HOST = os.getenv("POSTGRES_HOST")
 POSTGRES_USER = os.getenv("POSTGRES_USER")
@@ -34,6 +34,19 @@ ZONE_POLYGON = np.array([
     [0, 1]
 ])
 
+def find_serial_ports():
+    """Cari semua port serial yang tersedia"""
+    ports = []
+    possible_patterns = ['/dev/ttyUSB*', '/dev/ttyACM*', '/dev/ttyAMA*', '/dev/serial*']
+    
+    for pattern in possible_patterns:
+        ports.extend(glob.glob(pattern))
+    
+    # Filter hanya device files
+    ports = [p for p in ports if os.path.exists(p) and os.path.isfile(p)]
+    
+    return sorted(ports)
+
 def get_serial_connection():
     global ser_instance
     with serial_lock:
@@ -42,21 +55,41 @@ def get_serial_connection():
                 if ser_instance:
                     ser_instance.close()
                 
-                ser_instance = serial.Serial(
-                    IOT_PORT, 
-                    IOT_BAUD, 
-                    timeout=2,
-                    write_timeout=2,
-                    bytesize=serial.EIGHTBITS,
-                    parity=serial.PARITY_NONE,
-                    stopbits=serial.STOPBITS_ONE
-                )
-                print(f"Koneksi serial {IOT_PORT} dibuka")
-                time.sleep(3)
+                available_ports = find_serial_ports()
+                if not available_ports:
+                    print("Tidak ada port serial yang ditemukan")
+                    return None
                 
-                if ser_instance.in_waiting > 0:
-                    ser_instance.reset_input_buffer()
-                    ser_instance.reset_output_buffer()
+                print(f"Port serial yang tersedia: {available_ports}")
+                
+                for port in available_ports:
+                    try:
+                        print(f"Mencoba membuka {port}...")
+                        ser_instance = serial.Serial(
+                            port, 
+                            IOT_BAUD, 
+                            timeout=2,
+                            write_timeout=2,
+                            bytesize=serial.EIGHTBITS,
+                            parity=serial.PARITY_NONE,
+                            stopbits=serial.STOPBITS_ONE
+                        )
+                        print(f"Koneksi serial {port} berhasil dibuka")
+                        time.sleep(3)
+                        
+                        if ser_instance.in_waiting > 0:
+                            ser_instance.reset_input_buffer()
+                            ser_instance.reset_output_buffer()
+                        
+                        break
+                        
+                    except Exception as e:
+                        print(f"Gagal buka {port}: {e}")
+                        continue
+                
+                if ser_instance is None or not ser_instance.is_open:
+                    print("Semua port serial gagal dibuka")
+                    return None
                     
             except Exception as e:
                 print(f"Gagal buka koneksi serial: {e}")
@@ -136,6 +169,13 @@ def test_serial_connection():
     
     close_serial_connection()
     time.sleep(1)
+    
+    available_ports = find_serial_ports()
+    if not available_ports:
+        print("Tidak ada port serial yang terdeteksi")
+        return False
+    
+    print(f"Port yang tersedia: {available_ports}")
     
     ser = get_serial_connection()
     if ser is None:

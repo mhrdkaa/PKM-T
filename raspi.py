@@ -36,6 +36,9 @@ ZONE_POLYGON = np.array([
     [0, 1]
 ])
 
+serial_data_buffer = ""
+serial_buffer_lock = threading.Lock()
+
 def find_serial_ports():
     ports = []
     possible_patterns = ['/dev/ttyUSB*', '/dev/ttyACM*', '/dev/ttyAMA*', '/dev/serial*']
@@ -68,14 +71,14 @@ def get_serial_connection():
                         ser_instance = serial.Serial(
                             port, 
                             IOT_BAUD, 
-                            timeout=2,
+                            timeout=0.1,
                             write_timeout=2,
                             bytesize=serial.EIGHTBITS,
                             parity=serial.PARITY_NONE,
                             stopbits=serial.STOPBITS_ONE
                         )
                         print(f"Koneksi serial {port} berhasil dibuka")
-                        time.sleep(3)
+                        time.sleep(2)
                         
                         if ser_instance.in_waiting > 0:
                             ser_instance.reset_input_buffer()
@@ -106,36 +109,49 @@ def close_serial_connection():
             print("Koneksi serial ditutup")
 
 def read_serial_data():
+    global serial_data_buffer
     ser = get_serial_connection()
     if ser is None:
         return ""
+    
     try:
         if not ser.is_open:
-            print("Port serial tertutup, mencoba buka kembali...")
-            close_serial_connection()
-            ser = get_serial_connection()
-            if ser is None:
-                return ""
+            return ""
         
         data_buffer = ""
-        bytes_to_read = ser.in_waiting
-        if bytes_to_read > 0:
-            byte_data = ser.read(bytes_to_read)
+        while ser.in_waiting > 0:
             try:
-                data_buffer = byte_data.decode('utf-8', errors='ignore')
-                if data_buffer.strip():
-                    print(f"RAW SERIAL DATA: '{data_buffer.strip()}'")
-            except Exception as decode_error:
-                print(f"Error decode serial data: {decode_error}")
+                byte_data = ser.read(ser.in_waiting)
+                decoded_data = byte_data.decode('utf-8', errors='ignore')
+                data_buffer += decoded_data
+            except Exception as e:
+                print(f"Error membaca data serial: {e}")
+                break
         
-        return data_buffer.strip()
+        if data_buffer:
+            with serial_buffer_lock:
+                serial_data_buffer += data_buffer
+            
+            lines = data_buffer.split('\n')
+            for line in lines:
+                line = line.strip()
+                if line:
+                    print(f"RAW SERIAL DATA: '{line}'")
         
-    except serial.SerialException as e:
-        print(f"SerialException dalam read_serial_data: {e}")
-        close_serial_connection()
-        return ""
+        return data_buffer
+        
     except Exception as e:
-        print(f"Unexpected error baca serial: {e}")
+        print(f"Error baca serial: {e}")
+        return ""
+
+def get_serial_line():
+    global serial_data_buffer
+    with serial_buffer_lock:
+        if '\n' in serial_data_buffer:
+            lines = serial_data_buffer.split('\n', 1)
+            line = lines[0].strip()
+            serial_data_buffer = lines[1] if len(lines) > 1 else ""
+            return line
         return ""
 
 def send_serial_data(data):
@@ -144,11 +160,7 @@ def send_serial_data(data):
         return False
     try:
         if not ser.is_open:
-            print("Port serial tertutup saat kirim, mencoba buka kembali...")
-            close_serial_connection()
-            ser = get_serial_connection()
-            if ser is None:
-                return False
+            return False
         
         command = f"{data}\n"
         ser.write(command.encode())
@@ -156,13 +168,15 @@ def send_serial_data(data):
         print(f"Data terkirim ke serial: '{data}'")
         return True
         
-    except serial.SerialException as e:
-        print(f"SerialException dalam send_serial_data: {e}")
-        close_serial_connection()
-        return False
     except Exception as e:
         print(f"Error kirim serial: {e}")
         return False
+
+def serial_reader_thread():
+    print("Memulai thread pembaca serial...")
+    while True:
+        read_serial_data()
+        time.sleep(0.1)
 
 def test_serial_connection():
     print("Testing koneksi serial...")
@@ -191,11 +205,11 @@ def test_serial_connection():
     print("Menunggu response dari Arduino...")
     start_time = time.time()
     while time.time() - start_time < 5:
-        data = read_serial_data()
-        if data:
-            print(f"Response diterima: {data}")
+        line = get_serial_line()
+        if line:
+            print(f"Response diterima: {line}")
             return True
-        time.sleep(0.5)
+        time.sleep(0.1)
     
     print("Tidak ada response dari Arduino (timeout)")
     return True
@@ -540,19 +554,12 @@ def tunggu_perintah_dari_arduino(timeout=60):
     try:
         print("Menunggu sinyal 'button' dari Arduino...")
         start = time.time()
-        last_serial_check = 0
 
         while time.time() - start < timeout:
-            current_time = time.time()
-            
-            if current_time - last_serial_check >= 0.5:
-                data = read_serial_data()
-                last_serial_check = current_time
-                
-                if data and "button" in data.lower():
-                    print("Sinyal button diterima dari Arduino!")
-                    return True
-            
+            line = get_serial_line()
+            if line and "button" in line.lower():
+                print("Sinyal button diterima dari Arduino!")
+                return True
             time.sleep(0.1)
             
         print("Timeout - Tidak ada sinyal 'button' dari Arduino")
@@ -588,6 +595,10 @@ if __name__ == "__main__":
         callback_thread = threading.Thread(target=handle_telegram_callbacks, daemon=True)
         callback_thread.start()
         print("Thread callback handler started")
+        
+        serial_thread = threading.Thread(target=serial_reader_thread, daemon=True)
+        serial_thread.start()
+        print("Thread serial reader started")
         
         available_cams = list_available_cameras()
         if not available_cams:

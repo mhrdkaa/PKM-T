@@ -13,7 +13,7 @@ try:
 except Exception:
     pass
 
-IOT_PORT = "COM8"
+IOT_PORT = "COM11"
 IOT_BAUD = 115200
 POSTGRES_HOST = os.getenv("POSTGRES_HOST")
 POSTGRES_USER = os.getenv("POSTGRES_USER")
@@ -24,17 +24,13 @@ POSTGRES_PORT = os.getenv("POSTGRES_PORT")
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID   = os.getenv("TELEGRAM_CHAT_ID")
 
-# Global variable untuk callback handler
 callback_lock = threading.Lock()
 
-# Global serial connection dengan lock
 serial_lock = threading.Lock()
 ser_instance = None
 
-# Global YOLO model
 yolo_model = None
 
-# YOLO Configuration
 ZONE_POLYGON = np.array([
     [0, 0],
     [1, 0],

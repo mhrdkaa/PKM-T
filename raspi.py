@@ -53,10 +53,13 @@ def get_serial_connection():
                 ser_instance = serial.Serial(IOT_PORT, IOT_BAUD, timeout=1)
                 print(f"Koneksi serial {IOT_PORT} dibuka")
                 time.sleep(2)
+                ser_instance.reset_input_buffer()
+                ser_instance.reset_output_buffer()
             except Exception as e:
                 print(f"Gagal buka koneksi serial: {e}")
                 return None
         return ser_instance
+
 
 def close_serial_connection():
     """Tutup koneksi serial dengan aman"""
@@ -68,25 +71,24 @@ def close_serial_connection():
             print("Koneksi serial ditutup")
 
 def read_serial_data():
-    """Baca semua data yang available dari serial"""
+    """Baca data dari serial dengan auto-reconnect"""
     ser = get_serial_connection()
     if ser is None:
         return ""
     try:
-        data_buffer = ""
-        while ser.in_waiting > 0:
-            byte_data = ser.read(ser.in_waiting)
-            try:
-                data_buffer += byte_data.decode('utf-8', errors='ignore')
-            except:
-                pass
-        if data_buffer:
-            print(f"RAW SERIAL DATA: '{data_buffer}'")
-            return data_buffer.strip()
+        if ser.in_waiting > 0:
+            data = ser.readline().decode('utf-8', errors='ignore').strip()
+            if data:
+                print(f"DATA SERIAL: {data}")
+            return data
         return ""
-    except Exception as e:
-        print(f"Error baca serial: {e}")
+    except (serial.SerialException, OSError) as e:
+        print(f"Error baca serial: {e} — mencoba reconnect...")
+        close_serial_connection()
+        time.sleep(2)
+        get_serial_connection()
         return ""
+
 
 def send_serial_data(data):
     """Kirim data melalui serial connection"""

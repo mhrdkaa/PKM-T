@@ -39,7 +39,7 @@ ZONE_POLYGON = np.array([
 def get_serial_connection():
     global ser_instance
     with serial_lock:
-        if ser_instance is None or not ser_instance.is_open:
+        if ser_instance is None:
             try:
                 ser_instance = serial.Serial(
                     port=IOT_PORT,
@@ -73,7 +73,7 @@ def get_serial_connection():
 def close_serial_connection():
     global ser_instance
     with serial_lock:
-        if ser_instance and ser_instance.is_open:
+        if ser_instance:
             ser_instance.close()
             ser_instance = None
             print("Koneksi serial ditutup")
@@ -86,11 +86,8 @@ def read_serial_data():
     try:
         time.sleep(0.1)
         
-        data_buffer = ""
-        bytes_available = ser.in_waiting
-        
-        if bytes_available > 0:
-            raw_data = ser.read(bytes_available)
+        if ser.in_waiting > 0:
+            raw_data = ser.read(ser.in_waiting)
             
             try:
                 decoded_data = raw_data.decode('utf-8', errors='ignore').strip()
@@ -105,12 +102,9 @@ def read_serial_data():
         
     except serial.SerialException as e:
         print(f"SerialException dalam read_serial_data: {e}")
-        global ser_instance
-        ser_instance = None
         return ""
     except OSError as e:
         print(f"OSError: {e}")
-        ser_instance = None
         return ""
     except Exception as e:
         print(f"Error baca serial: {e}")
@@ -135,7 +129,6 @@ def send_serial_data(data):
         
     except serial.SerialException as e:
         print(f"SerialException dalam send_serial_data: {e}")
-        ser_instance = None
         return False
     except Exception as e:
         print(f"Error kirim serial: {e}")
@@ -535,6 +528,11 @@ if __name__ == "__main__":
             
         conn, cursor = get_db_cursor()
         print("Silakan scan QR Code")
+        
+        # BUKA KONEKSI SERIAL SEKALI SAJA di awal
+        print("Membuka koneksi serial...")
+        get_serial_connection()
+        
         while True:
             data = input().strip()
             if not data: 

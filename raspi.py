@@ -7,14 +7,13 @@ import threading
 import numpy as np
 from ultralytics import YOLO
 import supervision as sv
-import subprocess
 try:
     from dotenv import load_dotenv
     load_dotenv()
 except Exception:
     pass
 
-IOT_PORT = "/dev/ttyUSB1"  
+IOT_PORT = "/dev/ttyUSB0"
 IOT_BAUD = 115200
 POSTGRES_HOST = os.getenv("POSTGRES_HOST")
 POSTGRES_USER = os.getenv("POSTGRES_USER")
@@ -42,10 +41,30 @@ def get_serial_connection():
     with serial_lock:
         if ser_instance is None or not ser_instance.is_open:
             try:
-                subprocess.run(['sudo', 'chmod', '666', IOT_PORT], check=False)
-                ser_instance = serial.Serial(IOT_PORT, IOT_BAUD, timeout=1)
-                print(f"Koneksi serial {IOT_PORT} dibuka")
+                ser_instance = serial.Serial(
+                    port=IOT_PORT,
+                    baudrate=IOT_BAUD,
+                    timeout=2,
+                    write_timeout=2,
+                    bytesize=serial.EIGHTBITS,
+                    parity=serial.PARITY_NONE,
+                    stopbits=serial.STOPBITS_ONE,
+                    rtscts=False,
+                    dsrdtr=False,
+                    xonxoff=False
+                )
+                
+                ser_instance.dtr = False
+                time.sleep(0.5)
+                ser_instance.dtr = True
                 time.sleep(2)
+                
+                ser_instance.reset_input_buffer()
+                ser_instance.reset_output_buffer()
+                
+                print(f"Koneksi serial {IOT_PORT} berhasil dibuka")
+                return ser_instance
+                
             except Exception as e:
                 print(f"Gagal buka koneksi serial: {e}")
                 return None
@@ -63,17 +82,35 @@ def read_serial_data():
     ser = get_serial_connection()
     if ser is None:
         return ""
+    
     try:
+        time.sleep(0.1)
+        
         data_buffer = ""
-        while ser.in_waiting > 0:
-            byte_data = ser.read(ser.in_waiting)
+        bytes_available = ser.in_waiting
+        
+        if bytes_available > 0:
+            raw_data = ser.read(bytes_available)
+            
             try:
-                data_buffer += byte_data.decode('utf-8', errors='ignore')
-            except:
-                pass
-        if data_buffer:
-            print(f"RAW SERIAL DATA: '{data_buffer}'")
-            return data_buffer.strip()
+                decoded_data = raw_data.decode('utf-8', errors='ignore').strip()
+                if decoded_data:
+                    print(f"Serial received: '{decoded_data}'")
+                    return decoded_data
+            except UnicodeDecodeError:
+                print("Gagal decode data serial")
+                return ""
+        
+        return ""
+        
+    except serial.SerialException as e:
+        print(f"SerialException dalam read_serial_data: {e}")
+        global ser_instance
+        ser_instance = None
+        return ""
+    except OSError as e:
+        print(f"OSError: {e}")
+        ser_instance = None
         return ""
     except Exception as e:
         print(f"Error baca serial: {e}")
@@ -82,10 +119,24 @@ def read_serial_data():
 def send_serial_data(data):
     ser = get_serial_connection()
     if ser is None:
+        print("Tidak bisa kirim data - serial tidak terhubung")
         return False
+    
     try:
-        ser.write(f"{data}\n".encode())
+        if not data.endswith('\n'):
+            data += '\n'
+        
+        encoded_data = data.encode('utf-8')
+        ser.write(encoded_data)
+        ser.flush()
+        
+        print(f"Serial sent: '{data.strip()}'")
         return True
+        
+    except serial.SerialException as e:
+        print(f"SerialException dalam send_serial_data: {e}")
+        ser_instance = None
+        return False
     except Exception as e:
         print(f"Error kirim serial: {e}")
         return False

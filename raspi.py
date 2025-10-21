@@ -14,7 +14,7 @@ except Exception:
     pass
 
 # Configuration for Raspberry Pi
-IOT_PORT = "/dev/ttyUSB1"  # Raspberry Pi serial port
+IOT_PORT = "/dev/arduino"  # Raspberry Pi serial port
 IOT_BAUD = 115200
 POSTGRES_HOST = os.getenv("POSTGRES_HOST")
 POSTGRES_USER = os.getenv("POSTGRES_USER")

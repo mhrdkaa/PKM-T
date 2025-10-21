@@ -1,4 +1,8 @@
-import os, time, requests, cv2, psycopg2
+import os
+import time
+import requests
+import cv2
+import psycopg2
 from datetime import datetime
 from decimal import Decimal, InvalidOperation
 import serial
@@ -8,6 +12,7 @@ import numpy as np
 from ultralytics import YOLO
 import supervision as sv
 import subprocess
+
 try:
     from dotenv import load_dotenv
     load_dotenv()
@@ -37,185 +42,140 @@ ZONE_POLYGON = np.array([
     [0, 1]
 ])
 
-class RobustSerial:
+class FixedRobustSerial:
     def __init__(self, port=None, baudrate=115200, timeout=1):
         self.port = port or IOT_PORT
         self.baudrate = baudrate
         self.timeout = timeout
         self.ser = None
-        self.last_error_time = 0
-        self.error_count = 0
         self.setup_serial()
     
     def setup_serial(self):
-        """Setup serial connection dengan error handling"""
-        try:
-            # Close existing connection
-            if self.ser and self.ser.is_open:
-                self.ser.close()
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                if self.ser and self.ser.is_open:
+                    self.ser.close()
+                    time.sleep(1)
+                
+                os.system(f'sudo chmod 666 {self.port}')
                 time.sleep(0.5)
-            
-            print(f"Mencoba koneksi serial ke {self.port} dengan baudrate {self.baudrate}")
-            
-            # Setup new connection dengan parameter optimal untuk Raspberry Pi
-            self.ser = serial.Serial(
-                port=self.port,
-                baudrate=self.baudrate,
-                timeout=self.timeout,
-                write_timeout=self.timeout,
-                bytesize=serial.EIGHTBITS,
-                parity=serial.PARITY_NONE,
-                stopbits=serial.STOPBITS_ONE,
-                rtscts=False,
-                dsrdtr=False,
-                xonxoff=False
-            )
-            
-            # Clear buffer
-            self.ser.reset_input_buffer()
-            self.ser.reset_output_buffer()
-            
-            # Tunggu inisialisasi
-            time.sleep(2)
-            print(f"Serial connected to {self.port} at {self.baudrate} baud")
-            self.error_count = 0
-            return True
-            
-        except serial.SerialException as e:
-            print(f"SerialException: {e}")
-            self.ser = None
-            return False
-        except Exception as e:
-            print(f"Error setup serial: {e}")
-            self.ser = None
-            return False
+                
+                print(f"Attempt {attempt+1}: Connecting to {self.port} at {self.baudrate}")
+                
+                self.ser = serial.Serial(
+                    port=self.port,
+                    baudrate=self.baudrate,
+                    timeout=self.timeout,
+                    write_timeout=self.timeout,
+                    bytesize=serial.EIGHTBITS,
+                    parity=serial.PARITY_NONE,
+                    stopbits=serial.STOPBITS_ONE,
+                    rtscts=False,
+                    dsrdtr=False,
+                    xonxoff=False
+                )
+                
+                self.ser.dtr = False
+                time.sleep(0.5)
+                self.ser.dtr = True
+                time.sleep(2)
+                
+                self.ser.reset_input_buffer()
+                self.ser.reset_output_buffer()
+                
+                print(f"Serial connected: {self.port}")
+                return True
+                
+            except serial.SerialException as e:
+                print(f"Serial attempt {attempt+1} failed: {e}")
+                if attempt < max_retries - 1:
+                    time.sleep(2)
+                    continue
+                return False
+            except Exception as e:
+                print(f"Unexpected error: {e}")
+                return False
     
     def read_serial_data(self):
-        """Baca data dari serial dengan robust error handling"""
         if self.ser is None or not self.ser.is_open:
-            print("Serial not connected, attempting reconnect...")
+            print("Serial not connected, reconnecting...")
             if not self.setup_serial():
                 return ""
         
         try:
-            # Check if data available
             if self.ser.in_waiting > 0:
-                data_buffer = ""
-                bytes_to_read = self.ser.in_waiting
-                
-                # Read available data
-                byte_data = self.ser.read(bytes_to_read)
-                
-                try:
-                    decoded_data = byte_data.decode('utf-8', errors='ignore')
-                    data_buffer = decoded_data.strip()
-                    
-                    if data_buffer:
-                        print(f"RAW SERIAL DATA: '{data_buffer}'")
-                        return data_buffer
-                        
-                except Exception as decode_error:
-                    print(f"Decode error: {decode_error}")
-                    return ""
-            
+                data = self.ser.readline().decode('utf-8', errors='ignore').strip()
+                if data:
+                    print(f"Serial received: '{data}'")
+                    return data
             return ""
             
         except serial.SerialException as e:
-            print(f"SerialException during read: {e}")
-            self.handle_serial_error()
-            return ""
-        except OSError as e:
-            print(f"OSError (USB disconnect?): {e}")
-            self.handle_serial_error()
+            print(f"Serial read error: {e}")
+            self.ser = None
             return ""
         except Exception as e:
-            print(f"Unexpected error during read: {e}")
+            print(f"Read error: {e}")
             return ""
     
     def write_serial_data(self, data):
-        """Tulis data ke serial dengan error handling"""
         if self.ser is None or not self.ser.is_open:
-            print("Serial not connected for writing, attempting reconnect...")
             if not self.setup_serial():
                 return False
         
         try:
-            # Ensure data ends with newline
             if not data.endswith('\n'):
                 data += '\n'
-            
+                
             self.ser.write(data.encode())
             self.ser.flush()
-            print(f"Serial write: '{data.strip()}'")
+            print(f"Serial sent: '{data.strip()}'")
             return True
             
         except serial.SerialException as e:
-            print(f"SerialException during write: {e}")
-            self.handle_serial_error()
+            print(f"Serial write error: {e}")
+            self.ser = None
             return False
         except Exception as e:
-            print(f"Error during serial write: {e}")
+            print(f"Write error: {e}")
             return False
     
-    def handle_serial_error(self):
-        """Handle serial error dengan exponential backoff"""
-        self.error_count += 1
-        current_time = time.time()
-        
-        # Exponential backoff: tunggu lebih lama setelah error berulang
-        backoff_time = min(2 ** self.error_count, 30)
-        
-        if current_time - self.last_error_time > 60:
-            self.error_count = 0
-        
-        print(f"Serial error count: {self.error_count}, waiting {backoff_time}s before reconnect")
-        time.sleep(backoff_time)
-        
-        self.last_error_time = current_time
-        self.setup_serial()
-    
     def close(self):
-        """Tutup koneksi serial"""
         try:
             if self.ser and self.ser.is_open:
                 self.ser.close()
-                print("Serial connection closed")
+                print("Serial closed")
         except:
             pass
 
-# Global serial instance
 serial_reader = None
 
 def get_serial_connection():
-    """Dapatkan koneksi serial shared"""
     global serial_reader
     if serial_reader is None:
-        serial_reader = RobustSerial(IOT_PORT, IOT_BAUD)
+        serial_reader = FixedRobustSerial(IOT_PORT, IOT_BAUD)
     return serial_reader
 
 def read_serial_data():
-    """Wrapper untuk baca data serial"""
     global serial_reader
     if serial_reader is None:
         serial_reader = get_serial_connection()
     return serial_reader.read_serial_data()
 
 def send_serial_data(data):
-    """Wrapper untuk kirim data serial"""
     global serial_reader
     if serial_reader is None:
         serial_reader = get_serial_connection()
     return serial_reader.write_serial_data(data)
 
 def close_serial_connection():
-    """Tutup koneksi serial dengan aman"""
     global serial_reader
     if serial_reader:
         serial_reader.close()
         serial_reader = None
 
 def fix_serial_permissions():
-    """Fix permission issues di Raspberry Pi"""
     try:
         subprocess.run(['sudo', 'chmod', '666', IOT_PORT], check=True)
         print("Serial permissions fixed")
@@ -223,27 +183,23 @@ def fix_serial_permissions():
         print(f"Permission fix error: {e}")
 
 def diagnose_serial_issue():
-    """Diagnose serial issues di Raspberry Pi"""
     print("Diagnosing serial issues...")
     
     try:
-        # Cek jika device exists
         if os.path.exists(IOT_PORT):
             print(f"Device {IOT_PORT} exists")
             
-            # Cek permissions
             import stat
             st = os.stat(IOT_PORT)
             permissions = stat.S_IMODE(st.st_mode)
             print(f"Permissions: {oct(permissions)}")
             
             if permissions != 0o666:
-                print("Permission mungkin kurang, trying to fix...")
+                print("Fixing permissions...")
                 fix_serial_permissions()
         else:
             print(f"Device {IOT_PORT} not found!")
             
-        # Cek USB devices
         result = subprocess.run(['lsusb'], capture_output=True, text=True)
         print("USB Devices:")
         print(result.stdout if result.stdout else "No output")
@@ -251,58 +207,8 @@ def diagnose_serial_issue():
     except Exception as e:
         print(f"Diagnosis error: {e}")
 
-def get_serial_connection_old():
-    """Dapatkan koneksi serial shared - legacy version"""
-    global ser_instance
-    with serial_lock:
-        if ser_instance is None or not ser_instance.is_open:
-            try:
-                # Fix permissions first
-                fix_serial_permissions()
-                ser_instance = serial.Serial(IOT_PORT, IOT_BAUD, timeout=1)
-                print(f"Koneksi serial {IOT_PORT} dibuka")
-                time.sleep(2)
-            except Exception as e:
-                print(f"Gagal buka koneksi serial: {e}")
-                return None
-        return ser_instance
-
-def read_serial_data_old():
-    """Baca semua data yang available dari serial - legacy version"""
-    ser = get_serial_connection_old()
-    if ser is None:
-        return ""
-    try:
-        data_buffer = ""
-        while ser.in_waiting > 0:
-            byte_data = ser.read(ser.in_waiting)
-            try:
-                data_buffer += byte_data.decode('utf-8', errors='ignore')
-            except:
-                pass
-        if data_buffer:
-            print(f"RAW SERIAL DATA: '{data_buffer}'")
-            return data_buffer.strip()
-        return ""
-    except Exception as e:
-        print(f"Error baca serial: {e}")
-        return ""
-
-def send_serial_data_old(data):
-    """Kirim data melalui serial connection - legacy version"""
-    ser = get_serial_connection_old()
-    if ser is None:
-        return False
-    try:
-        ser.write(f"{data}\n".encode())
-        return True
-    except Exception as e:
-        print(f"Error kirim serial: {e}")
-        return False
-
 def handle_telegram_callbacks():
-    """Thread untuk handle callback dari inline button Telegram"""
-    print("Memulai thread callback handler...")
+    print("Starting callback handler thread...")
     last_update_id = 0
     
     while True:
@@ -323,7 +229,7 @@ def handle_telegram_callbacks():
                             message_id = update["callback_query"]["message"]["message_id"]
                             chat_id = update["callback_query"]["message"]["chat"]["id"]
                             
-                            print(f"CALLBACK DITERIMA: {callback_data}")
+                            print(f"CALLBACK RECEIVED: {callback_data}")
                             
                             answer_url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/answerCallbackQuery"
                             answer_data = {
@@ -361,14 +267,13 @@ def handle_telegram_callbacks():
                             }
                             requests.post(edit_url, json=edit_data, verify=False)
                             
-                            # Kirim ke Arduino via serial
-                            print(f"Mengirim {kisi_command} ke Arduino...")
+                            print(f"Sending {kisi_command} to Arduino...")
                             send_serial_data(kisi_command)
             
             time.sleep(1)
             
         except Exception as e:
-            print(f"Error dalam handle_telegram_callbacks: {e}")
+            print(f"Error in handle_telegram_callbacks: {e}")
             time.sleep(5)
 
 def format_rupiah(value):
@@ -389,7 +294,6 @@ def pick_first(d: dict, keys):
     return None
 
 def is_paket_cod(status_paket):
-    """Cek apakah paket termasuk COD"""
     if not status_paket:
         return False
     
@@ -399,7 +303,6 @@ def is_paket_cod(status_paket):
     return status_normalized == "COD"
 
 def init_yolo_model(model_path="PKM-KC.pt"):
-    """Initialize YOLO model"""
     global yolo_model
     try:
         yolo_model = YOLO(model_path)
@@ -411,19 +314,16 @@ def init_yolo_model(model_path="PKM-KC.pt"):
         return None
 
 def process_frame_with_yolo(frame, model, frame_width=640, frame_height=480):
-    """Process frame dengan YOLO detection - optimized untuk Raspberry Pi"""
     if model is None:
         print("YOLO model is None, returning original frame")
         return frame, 0
     
     try:
-        # Resize frame untuk performa lebih baik di Raspberry Pi
         original_height, original_width = frame.shape[:2]
         if original_width > 640:
             frame = cv2.resize(frame, (640, 480))
             frame_width, frame_height = 640, 480
         
-        # Initialize annotators
         box_annotator = sv.BoxAnnotator(
             thickness=1,
             text_scale=0.5
@@ -438,7 +338,6 @@ def process_frame_with_yolo(frame, model, frame_width=640, frame_height=480):
             text_scale=0.8
         )
 
-        # Run YOLO inference dengan optimasi untuk Raspberry Pi
         results = model(frame, 
                        agnostic_nms=True, 
                        verbose=False,
@@ -449,14 +348,12 @@ def process_frame_with_yolo(frame, model, frame_width=640, frame_height=480):
         
         detections = sv.Detections.from_yolov8(results)
         
-        # Create labels
         labels = [
             f"{model.model.names[class_id]} {confidence:0.2f}"
             for _, confidence, class_id, _
             in detections
         ]
         
-        # Annotate frame
         annotated_frame = box_annotator.annotate(
             scene=frame.copy(), 
             detections=detections, 
@@ -466,7 +363,6 @@ def process_frame_with_yolo(frame, model, frame_width=640, frame_height=480):
         zone.trigger(detections=detections)
         annotated_frame = zone_annotator.annotate(scene=annotated_frame)
         
-        # Add detection count info
         detection_count = len(detections)
         cv2.putText(annotated_frame, f"Detections: {detection_count}", 
                    (10, frame_height - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
@@ -481,9 +377,8 @@ def process_frame_with_yolo(frame, model, frame_width=640, frame_height=480):
         return frame, 0
 
 def list_available_cameras(max_test=3):
-    """Deteksi kamera yang tersedia"""
     available_cameras = []
-    print("Mencari kamera yang tersedia...")
+    print("Searching for available cameras...")
     
     for i in range(max_test):
         cap = cv2.VideoCapture(i)
@@ -491,18 +386,17 @@ def list_available_cameras(max_test=3):
             ret, frame = cap.read()
             if ret and frame is not None:
                 available_cameras.append(i)
-                print(f"Kamera {i} ditemukan - Resolusi: {frame.shape[1]}x{frame.shape[0]}")
+                print(f"Camera {i} found - Resolution: {frame.shape[1]}x{frame.shape[0]}")
             else:
-                print(f"Kamera {i} terdeteksi tapi tidak bisa baca frame")
+                print(f"Camera {i} detected but cannot read frame")
             cap.release()
         else:
-            print(f"Kamera {i} tidak terdeteksi")
+            print(f"Camera {i} not detected")
         time.sleep(0.5)
     
     return available_cameras
 
 def init_camera(index=0, width=640, height=480, warmup_frames=8, camera_name="Kamera"):
-    """Initialize kamera dengan konfigurasi untuk Raspberry Pi"""
     cam = cv2.VideoCapture(index)
     if not cam.isOpened():
         raise RuntimeError(f"{camera_name} {index} tidak dapat dibuka.")
@@ -513,29 +407,25 @@ def init_camera(index=0, width=640, height=480, warmup_frames=8, camera_name="Ka
     cam.set(cv2.CAP_PROP_FPS, 15)
     cam.set(cv2.CAP_PROP_BUFFERSIZE, 1)
     
-    # Warmup kamera
     for i in range(warmup_frames):
         ret, frame = cam.read()
         if ret:
             print(f"{camera_name} warmup {i+1}/{warmup_frames} - Brightness: {frame.mean():.1f}")
         time.sleep(0.05)
     
-    # Verifikasi resolusi
     actual_width = int(cam.get(cv2.CAP_PROP_FRAME_WIDTH))
     actual_height = int(cam.get(cv2.CAP_PROP_FRAME_HEIGHT))
-    print(f"{camera_name} {index} siap - Resolusi: {actual_width}x{actual_height}")
+    print(f"{camera_name} {index} ready - Resolution: {actual_width}x{actual_height}")
     
     return cam
 
 def capture_normal_frame(cam, save_dir="captures", prefix="normal", overlay_text=None):
-    """Capture frame normal tanpa YOLO"""
     os.makedirs(save_dir, exist_ok=True)
     
     ok, frame = cam.read()
     if not ok or frame is None:
         raise RuntimeError("Gagal membaca frame dari kamera.")
     
-    # Add overlay text
     if overlay_text:
         ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         text = f"{overlay_text} | {ts}"
@@ -551,7 +441,6 @@ def capture_normal_frame(cam, save_dir="captures", prefix="normal", overlay_text
     return fpath
 
 def capture_yolo_frame(yolo_cam, yolo_model, save_dir="yolo_captures", prefix="yolo"):
-    """Capture frame dengan YOLO processing"""
     os.makedirs(save_dir, exist_ok=True)
     
     ok, frame = yolo_cam.read()
@@ -573,7 +462,6 @@ def capture_yolo_frame(yolo_cam, yolo_model, save_dir="yolo_captures", prefix="y
     return fpath, detection_count
 
 def send_telegram_photos(bot_token: str, chat_id: str, image_paths: list, caption: str = "") -> bool:
-    """Kirim multiple gambar ke Telegram"""
     if not image_paths:
         return False
     
@@ -591,18 +479,17 @@ def send_telegram_photos(bot_token: str, chat_id: str, image_paths: list, captio
                 r = requests.post(url, data=data, files=files, timeout=30, verify=False)
             
             if r.status_code == 200:
-                print(f"Foto terkirim: {os.path.basename(img_path)}")
+                print(f"Photo sent: {os.path.basename(img_path)}")
                 success_count += 1
             else:
-                print(f"Gagal kirim foto: {r.status_code}")
+                print(f"Failed to send photo: {r.status_code}")
                 
         except Exception as e:
-            print(f"Error kirim foto: {e}")
+            print(f"Error sending photo: {e}")
     
     return success_count > 0
 
 def send_telegram_buttons(bot_token: str, chat_id: str, resi_code: str, barang: str, harga: str):
-    """Kirim inline button"""
     url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
     
     keyboard = {
@@ -627,14 +514,14 @@ def send_telegram_buttons(bot_token: str, chat_id: str, resi_code: str, barang: 
         response = requests.post(url, json=data, timeout=10, verify=False)
         
         if response.status_code == 200:
-            print("Inline button berhasil dikirim!")
+            print("Inline button sent successfully!")
             return True
         else:
-            print("Gagal kirim button:", response.status_code, response.text)
+            print("Failed to send button:", response.status_code, response.text)
             return False
             
     except Exception as e:
-        print("Error kirim button:", e)
+        print("Error sending button:", e)
         return False
 
 def get_db_cursor():
@@ -648,7 +535,6 @@ def get_db_cursor():
     return conn, conn.cursor()
 
 def get_resi_detail(cursor, resi_code):
-    """Cari data di tabel paket berdasarkan no_resi"""
     cursor.execute("SELECT * FROM paket WHERE no_resi = %s LIMIT 1", (resi_code,))
     result = cursor.fetchone()
     if result:
@@ -657,24 +543,22 @@ def get_resi_detail(cursor, resi_code):
     return None
 
 def test_telegram_connection():
-    """Test koneksi ke Telegram"""
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/getMe"
     try:
         response = requests.get(url, timeout=10, verify=False)
         if response.status_code == 200:
-            print("Koneksi Telegram BOT OK")
+            print("Telegram BOT connection OK")
             return True
         else:
             print(f"Telegram Bot Error: {response.status_code}")
             return False
     except Exception as e:
-        print(f"Error koneksi Telegram: {e}")
+        print(f"Telegram connection error: {e}")
         return False
 
 def tunggu_perintah_dari_arduino(timeout=60):
-    """Tunggu sinyal 'button' dari Arduino via serial"""
     try:
-        print("Menunggu sinyal 'button' dari nodemcu...")
+        print("Waiting for 'button' signal from nodemcu...")
         start = time.time()
         last_status_time = time.time()
 
@@ -683,7 +567,7 @@ def tunggu_perintah_dari_arduino(timeout=60):
             if data:
                 print(f"Serial received: '{data}'")
                 if "button" in data.lower():
-                    print("Sinyal button diterima dari Arduino!")
+                    print("Button signal received from Arduino!")
                     return True
                 elif "error" in data.lower():
                     print(f"Arduino reported error: {data}")
@@ -694,11 +578,11 @@ def tunggu_perintah_dari_arduino(timeout=60):
                 
             time.sleep(0.5)
             
-        print("Timeout - Tidak ada sinyal 'button' dari Arduino")
+        print("Timeout - No 'button' signal from Arduino")
         return False
         
     except Exception as e:
-        print(f"Gagal baca dari Arduino: {e}")
+        print(f"Failed to read from Arduino: {e}")
         return False
 
 if __name__ == "__main__":
@@ -711,52 +595,56 @@ if __name__ == "__main__":
         diagnose_serial_issue()
         
         if not test_telegram_connection():
-            print("Tidak bisa melanjutkan, bot Telegram tidak bisa diakses")
+            print("Cannot continue, Telegram bot not accessible")
             exit(1)
         
         print("Loading YOLO model...")
         yolo_model = init_yolo_model("PKM-KC.pt")
         
         if yolo_model is None:
-            print("YOLO model gagal di-load, sistem tetap berjalan tanpa YOLO")
+            print("YOLO model failed to load, system will run without YOLO")
         
         print("Initializing serial connection...")
+        time.sleep(2)
+        os.system(f'sudo chmod 666 {IOT_PORT}')
+        time.sleep(1)
         get_serial_connection()
+        time.sleep(3)
         
         callback_thread = threading.Thread(target=handle_telegram_callbacks, daemon=True)
         callback_thread.start()
-        print("Thread callback handler started")
+        print("Callback handler thread started")
         
         available_cams = list_available_cameras()
         if not available_cams:
-            print("Tidak ada kamera yang terdeteksi!")
+            print("No cameras detected!")
             exit(1)
         
-        print(f"Kamera yang tersedia: {available_cams}")
+        print(f"Available cameras: {available_cams}")
         main_camera = init_camera(available_cams[0], camera_name="Main Camera")
         
         if len(available_cams) > 1:
             try:
                 yolo_camera = init_camera(available_cams[1], camera_name="YOLO Camera")
-                print("Kamera YOLO siap (kamera terpisah)")
+                print("YOLO camera ready (separate camera)")
             except Exception as e:
-                print(f"Gagal inisialisasi kamera YOLO terpisah: {e}")
+                print(f"Failed to initialize separate YOLO camera: {e}")
                 yolo_camera = main_camera
-                print("Menggunakan kamera utama untuk YOLO")
+                print("Using main camera for YOLO")
         else:
-            print("Hanya 1 kamera terdeteksi - menggunakan kamera utama untuk YOLO juga")
+            print("Only 1 camera detected - using main camera for YOLO too")
             yolo_camera = main_camera
             
         conn, cursor = get_db_cursor()
-        print("Koneksi PostgreSQL OK.")
-        print("Sistem siap!")
-        print("Silakan scan QR Code... (CTRL+C untuk berhenti)")
+        print("PostgreSQL connection OK.")
+        print("System ready!")
+        print("Please scan QR Code... (CTRL+C to stop)")
         
         while True:
             data = input().strip()
             if not data: 
                 continue
-            print("Hasil Scan:", data)
+            print("Scan Result:", data)
             row = get_resi_detail(cursor, data)
             found = row is not None
             if found:
@@ -786,28 +674,28 @@ if __name__ == "__main__":
                         overlay_text=f"RESI: {resi_val or data}"
                     )
                     
-                    print(f"Gambar utama tersimpan: {img_path}")
+                    print(f"Main image saved: {img_path}")
                     photo_success = send_telegram_photos(TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, [img_path], caption=caption)
                     serial_success = send_serial_data("R5A")
                     
                     if photo_success:
-                        print("Foto utama berhasil terkirim ke Telegram.")
+                        print("Main photo successfully sent to Telegram.")
                         if is_cod:
-                            print("Paket COD - Menunggu sinyal button dari Arduino...")
+                            print("COD package - Waiting for button signal from Arduino...")
                             
                             if tunggu_perintah_dari_arduino():
-                                print("Mengambil gambar YOLO...")
+                                print("Capturing YOLO image...")
                                 
                                 if yolo_model is not None:
                                     yolo_path, detection_count = capture_yolo_frame(yolo_camera, yolo_model)
-                                    print(f"Gambar YOLO tersimpan: {yolo_path}")
+                                    print(f"YOLO image saved: {yolo_path}")
                                     
                                     yolo_caption = f"YOLO DETECTION\nDetections: {detection_count}\nTime: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
                                     yolo_success = send_telegram_photos(TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, [yolo_path], yolo_caption)
                                     
                                     if yolo_success:
-                                        print("Gambar YOLO berhasil dikirim")
-                                        print("Mengirim inline button ke Telegram...")
+                                        print("YOLO image successfully sent")
+                                        print("Sending inline button to Telegram...")
                                         button_success = send_telegram_buttons(
                                             TELEGRAM_BOT_TOKEN, 
                                             TELEGRAM_CHAT_ID, 
@@ -817,14 +705,14 @@ if __name__ == "__main__":
                                         )
                                         
                                         if button_success:
-                                            print("Inline button berhasil dikirim!")
-                                            print("User bisa klik button KISI 1 atau KISI 2")
+                                            print("Inline button sent successfully!")
+                                            print("User can click KISI 1 or KISI 2 button")
                                         else:
-                                            print("Gagal kirim button")
+                                            print("Failed to send button")
                                     else:
-                                        print("Gagal kirim gambar YOLO")
+                                        print("Failed to send YOLO image")
                                 else:
-                                    print("YOLO model tidak tersedia, langsung kirim button")
+                                    print("YOLO model not available, sending button directly")
                                     button_success = send_telegram_buttons(
                                         TELEGRAM_BOT_TOKEN, 
                                         TELEGRAM_CHAT_ID, 
@@ -833,22 +721,22 @@ if __name__ == "__main__":
                                         harga_display
                                     )
                             else:
-                                print("Tidak ada sinyal button dari Arduino")
+                                print("No button signal from Arduino")
                         else:
-                            print("Paket NON COD - Proses selesai")
+                            print("NON COD package - Process completed")
                     
                     else:
-                        print("Gagal kirim foto utama")
+                        print("Failed to send main photo")
                     
                 except Exception as e:
-                    print("Gagal proses pengiriman:", e)
+                    print("Failed to process delivery:", e)
             else:
-                print("Resi tidak ditemukan di database")
+                print("Resi not found in database")
 
     except KeyboardInterrupt:
-        print("\nProgram dihentikan oleh pengguna.")
+        print("\nProgram stopped by user.")
     except Exception as e:
-        print("Error utama:", e)
+        print("Main error:", e)
     finally:
         try:
             if cursor: cursor.close()
@@ -857,10 +745,10 @@ if __name__ == "__main__":
         
         if main_camera and main_camera.isOpened():
             main_camera.release()
-            print("Kamera utama di-release")
+            print("Main camera released")
         
         if yolo_camera and yolo_camera.isOpened() and yolo_camera != main_camera:
             yolo_camera.release()
-            print("Kamera YOLO di-release")
+            print("YOLO camera released")
         
         close_serial_connection()

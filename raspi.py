@@ -677,7 +677,7 @@ if __name__ == "__main__":
                     
                     print(f"Main image saved: {img_path}")
                     photo_success = send_telegram_photos(TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, [img_path], caption=caption)
-                    serial_success = send_serial_data("R5A")
+                    # serial_success = send_serial_data("R5A")
                     
                     if photo_success:
                         print("Main photo successfully sent to Telegram.")

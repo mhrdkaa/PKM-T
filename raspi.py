@@ -36,103 +36,108 @@ ZONE_POLYGON = np.array([
     [0, 1]
 ])
 
-def get_serial_connection():
-    global ser_instance
-    with serial_lock:
-        if ser_instance is None:
-            try:
-                ser_instance = serial.Serial(
-                    port=IOT_PORT,
-                    baudrate=IOT_BAUD,
-                    timeout=2,
-                    write_timeout=2,
-                    bytesize=serial.EIGHTBITS,
-                    parity=serial.PARITY_NONE,
-                    stopbits=serial.STOPBITS_ONE,
-                    rtscts=False,
-                    dsrdtr=False,
-                    xonxoff=False
-                )
-                
-                ser_instance.dtr = False
-                time.sleep(0.5)
-                ser_instance.dtr = True
-                time.sleep(2)
-                
-                ser_instance.reset_input_buffer()
-                ser_instance.reset_output_buffer()
-                
-                print(f"Koneksi serial {IOT_PORT} berhasil dibuka")
-                return ser_instance
-                
-            except Exception as e:
-                print(f"Gagal buka koneksi serial: {e}")
-                return None
-        return ser_instance
-
-def close_serial_connection():
-    global ser_instance
-    with serial_lock:
-        if ser_instance:
-            ser_instance.close()
-            ser_instance = None
-            print("Koneksi serial ditutup")
-
-def read_serial_data():
-    ser = get_serial_connection()
-    if ser is None:
-        return ""
-    
-    try:
-        time.sleep(0.1)
+class SerialManager:
+    def __init__(self):
+        self.ser = None
+        self.last_error_time = 0
         
-        if ser.in_waiting > 0:
-            raw_data = ser.read(ser.in_waiting)
+    def get_connection(self):
+        with serial_lock:
+            if self.ser is None or not self.ser.is_open:
+                return self._reconnect()
+            return self.ser
+    
+    def _reconnect(self):
+        try:
+            if self.ser and self.ser.is_open:
+                self.ser.close()
+                time.sleep(1)
             
-            try:
+            self.ser = serial.Serial(
+                port=IOT_PORT,
+                baudrate=IOT_BAUD,
+                timeout=2,
+                write_timeout=2,
+                bytesize=serial.EIGHTBITS,
+                parity=serial.PARITY_NONE,
+                stopbits=serial.STOPBITS_ONE,
+                rtscts=False,
+                dsrdtr=False,
+                xonxoff=False
+            )
+            
+            time.sleep(3)
+            
+            self.ser.reset_input_buffer()
+            self.ser.reset_output_buffer()
+            
+            print(f"Koneksi serial {IOT_PORT} berhasil dibuka")
+            return self.ser
+            
+        except Exception as e:
+            print(f"Gagal buka koneksi serial: {e}")
+            self.ser = None
+            return None
+    
+    def read_data(self):
+        ser = self.get_connection()
+        if ser is None:
+            return ""
+        
+        try:
+            if ser.in_waiting > 0:
+                raw_data = ser.read(ser.in_waiting)
                 decoded_data = raw_data.decode('utf-8', errors='ignore').strip()
                 if decoded_data:
                     print(f"Serial received: '{decoded_data}'")
                     return decoded_data
-            except UnicodeDecodeError:
-                print("Gagal decode data serial")
-                return ""
+            return ""
+            
+        except (serial.SerialException, OSError) as e:
+            print(f"Error baca serial: {e}")
+            self.ser = None
+            return ""
+        except Exception as e:
+            print(f"Unexpected error baca: {e}")
+            return ""
+    
+    def write_data(self, data):
+        ser = self.get_connection()
+        if ser is None:
+            return False
         
-        return ""
-        
-    except serial.SerialException as e:
-        print(f"SerialException dalam read_serial_data: {e}")
-        return ""
-    except OSError as e:
-        print(f"OSError: {e}")
-        return ""
-    except Exception as e:
-        print(f"Error baca serial: {e}")
-        return ""
+        try:
+            if not data.endswith('\n'):
+                data += '\n'
+            
+            ser.write(data.encode())
+            ser.flush()
+            print(f"Serial sent: '{data.strip()}'")
+            return True
+            
+        except (serial.SerialException, OSError) as e:
+            print(f"Error kirim serial: {e}")
+            self.ser = None
+            return False
+        except Exception as e:
+            print(f"Unexpected error kirim: {e}")
+            return False
+    
+    def close(self):
+        if self.ser and self.ser.is_open:
+            self.ser.close()
+            self.ser = None
+
+serial_manager = SerialManager()
+
+def read_serial_data():
+    return serial_manager.read_data()
 
 def send_serial_data(data):
-    ser = get_serial_connection()
-    if ser is None:
-        print("Tidak bisa kirim data - serial tidak terhubung")
-        return False
-    
-    try:
-        if not data.endswith('\n'):
-            data += '\n'
-        
-        encoded_data = data.encode('utf-8')
-        ser.write(encoded_data)
-        ser.flush()
-        
-        print(f"Serial sent: '{data.strip()}'")
-        return True
-        
-    except serial.SerialException as e:
-        print(f"SerialException dalam send_serial_data: {e}")
-        return False
-    except Exception as e:
-        print(f"Error kirim serial: {e}")
-        return False
+    return serial_manager.write_data(data)
+
+def close_serial_connection():
+    serial_manager.close()
 
 def handle_telegram_callbacks():
     print("Memulai thread callback handler...")
@@ -529,10 +534,6 @@ if __name__ == "__main__":
         conn, cursor = get_db_cursor()
         print("Silakan scan QR Code")
         
-        # BUKA KONEKSI SERIAL SEKALI SAJA di awal
-        print("Membuka koneksi serial...")
-        get_serial_connection()
-        
         while True:
             data = input().strip()
             if not data: 
@@ -568,7 +569,12 @@ if __name__ == "__main__":
                     )
                     
                     print(f"Gambar utama tersimpan: {img_path}")
-                    serial_success = send_serial_data("R5A")
+                    
+                    # Coba kirim R5A, jika gagal auto reconnect
+                    if not send_serial_data("R5A"):
+                        print("Gagal kirim R5A, melakukan reconnect...")
+                        time.sleep(2)
+                    
                     photo_success = send_telegram_photos(TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, [img_path], caption=caption)
                     
                     if photo_success:

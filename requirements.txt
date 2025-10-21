@@ -6,6 +6,5 @@ python-telegram-bot
 supervision
 ultralytics
 numpy
-threading
 serial
 json

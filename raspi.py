@@ -14,7 +14,7 @@ except Exception:
     pass
 
 # Configuration for Raspberry Pi
-IOT_PORT = "/dev/arduino"  # Raspberry Pi serial port
+IOT_PORT = "/dev/ttyUSB0"  # Raspberry Pi serial port
 IOT_BAUD = 115200
 POSTGRES_HOST = os.getenv("POSTGRES_HOST")
 POSTGRES_USER = os.getenv("POSTGRES_USER")
@@ -71,24 +71,25 @@ def close_serial_connection():
             print("Koneksi serial ditutup")
 
 def read_serial_data():
-    """Baca data dari serial dengan auto-reconnect"""
+    """Baca semua data yang available dari serial"""
     ser = get_serial_connection()
     if ser is None:
         return ""
     try:
-        if ser.in_waiting > 0:
-            data = ser.readline().decode('utf-8', errors='ignore').strip()
-            if data:
-                print(f"DATA SERIAL: {data}")
-            return data
+        data_buffer = ""
+        while ser.in_waiting > 0:
+            byte_data = ser.read(ser.in_waiting)
+            try:
+                data_buffer += byte_data.decode('utf-8', errors='ignore')
+            except:
+                pass
+        if data_buffer:
+            print(f"RAW SERIAL DATA: '{data_buffer}'")
+            return data_buffer.strip()
         return ""
-    except (serial.SerialException, OSError) as e:
-        print(f"Error baca serial: {e} — mencoba reconnect...")
-        close_serial_connection()
-        time.sleep(2)
-        get_serial_connection()
+    except Exception as e:
+        print(f"Error baca serial: {e}")
         return ""
-
 
 def send_serial_data(data):
     """Kirim data melalui serial connection"""

@@ -1,7 +1,6 @@
 import os
 import time
 import requests
-import cv2
 import psycopg2
 from datetime import datetime
 from decimal import Decimal, InvalidOperation
@@ -12,6 +11,8 @@ import numpy as np
 from ultralytics import YOLO
 import supervision as sv
 import subprocess
+import cv2
+
 
 try:
     from dotenv import load_dotenv

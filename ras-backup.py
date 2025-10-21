@@ -13,7 +13,8 @@ try:
 except Exception:
     pass
 
-IOT_PORT = "/dev/ttyUSB1"  
+# Configuration for Raspberry Pi
+IOT_PORT = "/dev/ttyUSB0"  # Raspberry Pi serial port
 IOT_BAUD = 115200
 POSTGRES_HOST = os.getenv("POSTGRES_HOST")
 POSTGRES_USER = os.getenv("POSTGRES_USER")
@@ -24,11 +25,17 @@ POSTGRES_PORT = os.getenv("POSTGRES_PORT")
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID   = os.getenv("TELEGRAM_CHAT_ID")
 
+# Global variable untuk callback handler
 callback_lock = threading.Lock()
+
+# Global serial connection dengan lock
 serial_lock = threading.Lock()
 ser_instance = None
+
+# Global YOLO model
 yolo_model = None
 
+# YOLO Configuration
 ZONE_POLYGON = np.array([
     [0, 0],
     [1, 0],
@@ -36,6 +43,7 @@ ZONE_POLYGON = np.array([
     [0, 1]
 ])
 
+# ==== Serial Connection Manager ====
 def get_serial_connection():
     """Dapatkan koneksi serial shared"""
     global ser_instance
@@ -85,8 +93,10 @@ def send_serial_data(data):
     ser = get_serial_connection()
     if ser is None:
         return False
+    
     try:
         ser.write(f"{data}\n".encode())
+        print(f"Data dikirim via serial: {data}")
         return True
     except Exception as e:
         print(f"Error kirim serial: {e}")
@@ -111,6 +121,7 @@ def handle_telegram_callbacks():
                     for update in data["result"]:
                         last_update_id = update["update_id"]
                         
+                        # Handle callback query (inline button click)
                         if "callback_query" in update:
                             callback_data = update["callback_query"]["data"]
                             message_id = update["callback_query"]["message"]["message_id"]
@@ -118,6 +129,7 @@ def handle_telegram_callbacks():
                             
                             print(f"CALLBACK DITERIMA: {callback_data}")
                             
+                            # Answer the callback query (remove loading)
                             answer_url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/answerCallbackQuery"
                             answer_data = {
                                 "callback_query_id": update["callback_query"]["id"],
@@ -126,23 +138,15 @@ def handle_telegram_callbacks():
                             }
                             requests.post(answer_url, json=answer_data, verify=False)
                             
+                            # Update message text to show selection
                             edit_url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/editMessageText"
                             
-                            if callback_data.startswith("buka_1"):
-                                new_text = "Kisi 1 DIPILIH\nMengirim perintah ke sistem..."
-                                kisi_command = "R1A"
-                            elif callback_data.startswith("buka_2"):
+                            if callback_data.startswith("kisi_1"):
+                                new_text = "KISI 1 DIPILIH\nMengirim perintah ke sistem..."
+                                kisi_command = "kisi_1"
+                            elif callback_data.startswith("kisi_2"):
                                 new_text = "KISI 2 DIPILIH\nMengirim perintah ke sistem..."
-                                kisi_command = "R2A"
-                            elif callback_data.startswith("R3A"):
-                                new_text = "Pintu Utama DIPILIH\nMengirim perintah ke sistem..."
-                                kisi_command = "R3A"
-                            elif callback_data.startswith("R4A"):
-                                new_text = "Pintu Belakang\nMengirim perintah ke sistem..."
-                                kisi_command = "R4A"
-                            elif callback_data.startswith("R5A"):
-                                new_text = "Pintu Atas\nMengirim perintah ke sistem..."
-                                kisi_command = "R5A"
+                                kisi_command = "kisi_2"
                             else:
                                 continue
                             
@@ -456,6 +460,7 @@ def get_resi_detail(cursor, resi_code):
     """Cari data di tabel paket berdasarkan no_resi"""
     cursor.execute("SELECT * FROM paket WHERE no_resi = %s LIMIT 1", (resi_code,))
     result = cursor.fetchone()
+    
     if result:
         columns = [desc[0] for desc in cursor.description]
         return dict(zip(columns, result))
@@ -507,23 +512,30 @@ if __name__ == "__main__":
             print("Tidak bisa melanjutkan, bot Telegram tidak bisa diakses")
             exit(1)
         
+        # Load YOLO model di AWAL
         print("Loading YOLO model...")
         yolo_model = init_yolo_model("PKM-KC.pt")
         
         if yolo_model is None:
             print("YOLO model gagal di-load, sistem tetap berjalan tanpa YOLO")
         
+        # Mulai thread untuk handle callback Telegram
         callback_thread = threading.Thread(target=handle_telegram_callbacks, daemon=True)
         callback_thread.start()
         print("Thread callback handler started")
         
+        # Deteksi kamera yang tersedia
         available_cams = list_available_cameras()
         if not available_cams:
             print("Tidak ada kamera yang terdeteksi!")
             exit(1)
         
         print(f"Kamera yang tersedia: {available_cams}")
+        
+        # Inisialisasi kamera utama (untuk QR code)
         main_camera = init_camera(available_cams[0], camera_name="Main Camera")
+        
+        # Handle single camera scenario untuk Raspberry Pi
         if len(available_cams) > 1:
             try:
                 yolo_camera = init_camera(available_cams[1], camera_name="YOLO Camera")
@@ -546,8 +558,10 @@ if __name__ == "__main__":
             if not data: 
                 continue
             print("Hasil Scan:", data)
+
             row = get_resi_detail(cursor, data)
             found = row is not None
+
             if found:
                 resi_val   = pick_first(row, ["no_resi", "resi"])
                 barang_val = pick_first(row, ["nama_paket", "barang", "nama_barang"])
@@ -555,8 +569,10 @@ if __name__ == "__main__":
                 status_val = pick_first(row, ["status_paket", "status"])
 
                 harga_display = harga_raw if harga_raw is not None else "0"
+                
                 is_cod = is_paket_cod(status_val)
                 
+                # Caption untuk gambar utama
                 cap_lines = [
                     "Resi terverifikasi",
                     f"Resi  : {resi_val or '-'}",
@@ -568,6 +584,7 @@ if __name__ == "__main__":
                 caption = "\n".join(cap_lines)
 
                 try:
+                    # 1. Capture dan kirim gambar utama dulu
                     img_path = capture_normal_frame(
                         main_camera,
                         save_dir="captures",
@@ -576,27 +593,32 @@ if __name__ == "__main__":
                     )
                     
                     print(f"Gambar utama tersimpan: {img_path}")
-                    serial_success = send_serial_data("buka_1")
+                    
                     photo_success = send_telegram_photos(TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, [img_path], caption=caption)
                     
                     if photo_success:
                         print("Foto utama berhasil terkirim ke Telegram.")
                         
+                        # 2. Jika COD, proses YOLO + Button
                         if is_cod:
                             print("Paket COD - Menunggu sinyal button dari Arduino...")
                             
                             if tunggu_perintah_dari_arduino():
                                 print("Mengambil gambar YOLO...")
                                 
+                                # 3. Capture gambar YOLO (langsung ketika dapat sinyal button)
                                 if yolo_model is not None:
                                     yolo_path, detection_count = capture_yolo_frame(yolo_camera, yolo_model)
                                     print(f"Gambar YOLO tersimpan: {yolo_path}")
                                     
+                                    # 4. Kirim gambar YOLO
                                     yolo_caption = f"YOLO DETECTION\nDetections: {detection_count}\nTime: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
                                     yolo_success = send_telegram_photos(TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, [yolo_path], yolo_caption)
                                     
                                     if yolo_success:
                                         print("Gambar YOLO berhasil dikirim")
+                                        
+                                        # 5. Kirim button setelah gambar YOLO
                                         print("Mengirim inline button ke Telegram...")
                                         button_success = send_telegram_buttons(
                                             TELEGRAM_BOT_TOKEN, 

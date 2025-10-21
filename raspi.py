@@ -560,7 +560,6 @@ def capture_yolo_frame(yolo_cam, yolo_model, save_dir="yolo_captures", prefix="y
     
     print(f"Capturing YOLO frame - Brightness: {frame.mean():.1f}")
     
-    # Process dengan YOLO
     processed_frame, detection_count = process_frame_with_yolo(frame, yolo_model)
     
     fname = f"{prefix}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.jpg"
@@ -606,7 +605,6 @@ def send_telegram_buttons(bot_token: str, chat_id: str, resi_code: str, barang: 
     """Kirim inline button"""
     url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
     
-    # Buat inline keyboard
     keyboard = {
         "inline_keyboard": [
             [
@@ -689,8 +687,6 @@ def tunggu_perintah_dari_arduino(timeout=60):
                     return True
                 elif "error" in data.lower():
                     print(f"Arduino reported error: {data}")
-            
-            # Print status every 10 seconds
             if time.time() - last_status_time > 10:
                 elapsed = time.time() - start
                 print(f"Still waiting... {elapsed:.1f}s elapsed")
@@ -712,8 +708,6 @@ if __name__ == "__main__":
     
     try:
         print("Starting application on Raspberry Pi...")
-        
-        # Diagnose serial first
         diagnose_serial_issue()
         
         if not test_telegram_connection():
@@ -726,7 +720,6 @@ if __name__ == "__main__":
         if yolo_model is None:
             print("YOLO model gagal di-load, sistem tetap berjalan tanpa YOLO")
         
-        # Initialize serial connection early
         print("Initializing serial connection...")
         get_serial_connection()
         
@@ -767,11 +760,11 @@ if __name__ == "__main__":
             row = get_resi_detail(cursor, data)
             found = row is not None
             if found:
+
                 resi_val   = pick_first(row, ["no_resi", "resi"])
                 barang_val = pick_first(row, ["nama_paket", "barang", "nama_barang"])
                 harga_raw  = pick_first(row, ["harga", "harga_barang"])
                 status_val = pick_first(row, ["status_paket", "status"])
-
                 harga_display = harga_raw if harga_raw is not None else "0"
                 is_cod = is_paket_cod(status_val)
                 
@@ -794,7 +787,7 @@ if __name__ == "__main__":
                     )
                     
                     print(f"Gambar utama tersimpan: {img_path}")
-                    serial_success = send_serial_data("buka_1")
+                    serial_success = send_serial_data("R5A")
                     photo_success = send_telegram_photos(TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, [img_path], caption=caption)
                     
                     if photo_success:

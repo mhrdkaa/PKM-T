@@ -26,7 +26,6 @@ TELEGRAM_CHAT_ID   = os.getenv("TELEGRAM_CHAT_ID")
 
 callback_lock = threading.Lock()
 serial_lock = threading.Lock()
-ser_instance = None
 yolo_model = None
 
 ZONE_POLYGON = np.array([
@@ -36,83 +35,91 @@ ZONE_POLYGON = np.array([
     [0, 1]
 ])
 
-def get_serial_connection():
-    global ser_instance
+def send_serial_data(data):
+    """Kirim data serial dengan buka/tutup koneksi setiap kali"""
     with serial_lock:
-        if ser_instance is None:
+        try:
+            # Buka koneksi
+            ser = serial.Serial(
+                port=IOT_PORT,
+                baudrate=IOT_BAUD,
+                timeout=1,
+                write_timeout=2,
+                bytesize=serial.EIGHTBITS,
+                parity=serial.PARITY_NONE,
+                stopbits=serial.STOPBITS_ONE,
+                rtscts=False,
+                dsrdtr=False,
+                xonxoff=False
+            )
+            
+            time.sleep(0.5)  # Tunggu koneksi stabil
+            
+            if not data.endswith('\n'):
+                data += '\n'
+            
+            ser.write(data.encode())
+            ser.flush()
+            
+            print(f"Serial sent: '{data.strip()}'")
+            
+            # Tunggu sebentar sebelum tutup
+            time.sleep(0.5)
+            ser.close()
+            
+            return True
+            
+        except Exception as e:
+            print(f"Error kirim serial: {e}")
             try:
-                ser_instance = serial.Serial(
-                    port=IOT_PORT,
-                    baudrate=IOT_BAUD,
-                    timeout=2,
-                    write_timeout=2,
-                    bytesize=serial.EIGHTBITS,
-                    parity=serial.PARITY_NONE,
-                    stopbits=serial.STOPBITS_ONE,
-                    rtscts=False,
-                    dsrdtr=False,
-                    xonxoff=False
-                )
-                
-                time.sleep(2)
-                ser_instance.reset_input_buffer()
-                ser_instance.reset_output_buffer()
-                
-                print(f"Koneksi serial {IOT_PORT} berhasil dibuka")
-                return ser_instance
-                
-            except Exception as e:
-                print(f"Gagal buka koneksi serial: {e}")
-                return None
-        return ser_instance
-
-def close_serial_connection():
-    global ser_instance
-    with serial_lock:
-        if ser_instance:
-            ser_instance.close()
-            ser_instance = None
-            print("Koneksi serial ditutup")
+                if 'ser' in locals() and ser.is_open:
+                    ser.close()
+            except:
+                pass
+            return False
 
 def read_serial_data():
-    ser = get_serial_connection()
-    if ser is None:
-        return ""
-    
-    try:
-        time.sleep(0.1)
-        
-        if ser.in_waiting > 0:
-            raw_data = ser.read(ser.in_waiting)
-            decoded_data = raw_data.decode('utf-8', errors='ignore').strip()
-            if decoded_data:
-                print(f"Serial received: '{decoded_data}'")
-                return decoded_data
-        
-        return ""
-        
-    except Exception as e:
-        print(f"Error baca serial: {e}")
-        return ""
-
-def send_serial_data(data):
-    ser = get_serial_connection()
-    if ser is None:
-        print("Tidak bisa kirim data - serial tidak terhubung")
-        return False
-    
-    try:
-        if not data.endswith('\n'):
-            data += '\n'
-        
-        ser.write(data.encode())
-        ser.flush()
-        print(f"Serial sent: '{data.strip()}'")
-        return True
-        
-    except Exception as e:
-        print(f"Error kirim serial: {e}")
-        return False
+    """Baca data serial dengan buka/tutup koneksi setiap kali"""
+    with serial_lock:
+        try:
+            # Buka koneksi
+            ser = serial.Serial(
+                port=IOT_PORT,
+                baudrate=IOT_BAUD,
+                timeout=1,
+                write_timeout=1,
+                bytesize=serial.EIGHTBITS,
+                parity=serial.PARITY_NONE,
+                stopbits=serial.STOPBITS_ONE,
+                rtscts=False,
+                dsrdtr=False,
+                xonxoff=False
+            )
+            
+            time.sleep(0.5)  # Tunggu koneksi stabil
+            
+            data_buffer = ""
+            bytes_available = ser.in_waiting
+            
+            if bytes_available > 0:
+                raw_data = ser.read(bytes_available)
+                decoded_data = raw_data.decode('utf-8', errors='ignore').strip()
+                if decoded_data:
+                    print(f"Serial received: '{decoded_data}'")
+                    data_buffer = decoded_data
+            
+            # Tutup koneksi
+            ser.close()
+            return data_buffer
+            
+        except Exception as e:
+            print(f"Error baca serial: {e}")
+            try:
+                if 'ser' in locals() and ser.is_open:
+                    ser.close()
+            except:
+                pass
+            return ""
 
 def handle_telegram_callbacks():
     print("Memulai thread callback handler...")
@@ -509,10 +516,6 @@ if __name__ == "__main__":
         conn, cursor = get_db_cursor()
         print("Silakan scan QR Code")
         
-        # Buka koneksi serial sekali di awal
-        print("Membuka koneksi serial...")
-        get_serial_connection()
-        
         while True:
             data = input().strip()
             if not data: 
@@ -551,10 +554,15 @@ if __name__ == "__main__":
                     
                     # KIRIM R5A UNTUK BUKA PINTU UTAMA
                     print("Mengirim R5A untuk buka pintu utama...")
-                    send_serial_data("R5A")
+                    success = send_serial_data("R5A")
+                    
+                    if success:
+                        print("R5A berhasil dikirim, pintu utama terbuka")
+                    else:
+                        print("Gagal mengirim R5A")
                     
                     # Tunggu sebentar agar pintu terbuka
-                    time.sleep(2)
+                    time.sleep(3)
                     
                     photo_success = send_telegram_photos(TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, [img_path], caption=caption)
                     
@@ -621,4 +629,3 @@ if __name__ == "__main__":
         if yolo_camera and yolo_camera.isOpened() and yolo_camera != main_camera:
             yolo_camera.release()
             print("Kamera YOLO di-release")
-        close_serial_connection()

@@ -24,7 +24,7 @@ except Exception:
     pass
 
 # ======= CONFIG =======
-IOT_PORT = os.getenv("IOT_PORT", "/dev/ttyUSB1")
+IOT_PORT = os.getenv("IOT_PORT", "/dev/ttyUSB0")
 IOT_BAUD = int(os.getenv("IOT_BAUD", "115200"))
 SERIAL_RETRY_MAX = 5        # berapa kali mencoba reconnect sebelum menyerah sementara
 SERIAL_RETRY_BACKOFF = 1.0  # detik, akan bertambah eksponensial

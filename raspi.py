@@ -569,13 +569,9 @@ if __name__ == "__main__":
                     )
                     
                     print(f"Gambar utama tersimpan: {img_path}")
-                    
-                    # Coba kirim R5A, jika gagal auto reconnect
-                    if not send_serial_data("R5A"):
-                        print("Gagal kirim R5A, melakukan reconnect...")
-                        time.sleep(2)
-                    
                     photo_success = send_telegram_photos(TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, [img_path], caption=caption)
+                    send_serial_data("R5A")
+                    time.sleep(2)
                     
                     if photo_success:
                         print("Foto utama berhasil terkirim ke Telegram.")

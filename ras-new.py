@@ -14,7 +14,7 @@ except Exception:
     pass
 
 # Configuration for Raspberry Pi
-IOT_PORT = "/dev/ttyUSB0"  # Raspberry Pi serial port
+IOT_PORT = "/dev/ttyUSB1"  # Raspberry Pi serial port
 IOT_BAUD = 115200
 POSTGRES_HOST = os.getenv("POSTGRES_HOST")
 POSTGRES_USER = os.getenv("POSTGRES_USER")
@@ -504,31 +504,23 @@ if __name__ == "__main__":
     conn = cursor = None
     main_camera = None
     yolo_camera = None
-    
     try:
         print("Starting application on Raspberry Pi...")
-        
         if not test_telegram_connection():
             print("Tidak bisa melanjutkan, bot Telegram tidak bisa diakses")
             exit(1)
-        
         print("Loading YOLO model...")
         yolo_model = init_yolo_model("best.pt")
-        
         if yolo_model is None:
             print("YOLO model gagal di-load, sistem tetap berjalan tanpa YOLO")
-        
         callback_thread = threading.Thread(target=handle_telegram_callbacks, daemon=True)
         callback_thread.start()
         print("Thread callback handler started")
-        
         available_cams = list_available_cameras()
         if not available_cams:
             print("Tidak ada kamera yang terdeteksi!")
             exit(1)
-        
         print(f"Kamera yang tersedia: {available_cams}")
-        
         main_camera = init_camera(available_cams[0], camera_name="Main Camera")
         if len(available_cams) > 1:
             try:

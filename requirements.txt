@@ -7,4 +7,3 @@ supervision
 ultralytics
 numpy
 serial
-json

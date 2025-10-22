@@ -144,7 +144,7 @@ def handle_telegram_callbacks():
                             # Update message text to show selection
                             edit_url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/editMessageText"
                             
-                             if callback_data.startswith("buka_1"):
+                            if callback_data.startswith("buka_1"):
                                 new_text = "Kisi 1 DIPILIH\nMengirim perintah ke sistem..."
                                 kisi_command = "R1A"
                             elif callback_data.startswith("buka_2"):

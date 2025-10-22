@@ -596,7 +596,7 @@ if __name__ == "__main__":
                     )
                     
                     print(f"Gambar utama tersimpan: {img_path}")
-                    send_serial_data = 
+                    send_serial_data = serial_success("R5A")
                     photo_success = send_telegram_photos(TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, [img_path], caption=caption)
                     
                     if photo_success:

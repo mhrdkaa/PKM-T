@@ -429,8 +429,8 @@ def send_telegram_buttons(bot_token: str, chat_id: str, resi_code: str, barang: 
     keyboard = {
         "inline_keyboard": [
             [
-                {"text": "KISI 1", "callback_data": f"kisi_1_{resi_code}"},
-                {"text": "KISI 2", "callback_data": f"kisi_2_{resi_code}"}
+                {"text": "KISI 1", "callback_data": f"buka_1_{resi_code}"},
+                {"text": "KISI 2", "callback_data": f"buka_2_{resi_code}"}
             ]
         ]
     }

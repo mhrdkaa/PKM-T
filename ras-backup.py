@@ -1,16 +1,3 @@
-Error baca serial: [Errno 5] Input/output error
-Error baca serial: [Errno 5] Input/output error
-Error baca serial: [Errno 5] Input/output error
-Error baca serial: [Errno 5] Input/output error
-Error baca serial: [Errno 5] Input/output error
-Error baca serial: [Errno 5] Input/output error
-Error baca serial: [Errno 5] Input/output error
-Error baca serial: [Errno 5] Input/output error
-Error baca serial: [Errno 5] Input/output error
-Error baca serial: [Errno 5] Input/output error
-
-ini errornya karena apa ya??
-
 import os, time, requests, cv2, psycopg2
 from datetime import datetime
 from decimal import Decimal, InvalidOperation
@@ -426,8 +413,8 @@ def send_telegram_buttons(bot_token: str, chat_id: str, resi_code: str, barang: 
     keyboard = {
         "inline_keyboard": [
             [
-                {"text": "KISI 1", "callback_data": f"kisi_1_{resi_code}"},
-                {"text": "KISI 2", "callback_data": f"kisi_2_{resi_code}"}
+                {"text": "KISI 1", "callback_data": f"buka_1"},
+                {"text": "KISI 2", "callback_data": f"buka_2"}
             ]
         ]
     }
@@ -589,7 +576,7 @@ if __name__ == "__main__":
                     )
                     
                     print(f"Gambar utama tersimpan: {img_path}")
-                    serial_success = send_serial_data("buka_1")
+                    serial_success = send_serial_data("R5A")
                     photo_success = send_telegram_photos(TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, [img_path], caption=caption)
                     
                     if photo_success:

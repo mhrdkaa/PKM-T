@@ -471,6 +471,40 @@ def send_telegram_buttons(bot_token: str, chat_id: str, resi_code: str, barang: 
     except Exception as e:
         print("Error kirim button:", e)
         return False
+    
+def send_telegram_buttons(bot_token: str, chat_id: str):
+    url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
+    
+    keyboard = {
+        "inline_keyboard": [
+            [
+                {"text": "BUKA PINTU ATAS", "callback_data": f"R3A"},
+                {"text": "BUKA PINTU BAWAH", "callback_data": f"R4A"}
+            ]
+        ]
+    }
+    
+    message_text = f"PILIH NIH"
+    
+    try:
+        data = {
+            "chat_id": chat_id,
+            "text": message_text,
+            "reply_markup": json.dumps(keyboard)
+        }
+        
+        response = requests.post(url, json=data, timeout=10, verify=False)
+        
+        if response.status_code == 200:
+            print("berhasil dikirim!")
+            return True
+        else:
+            print("Gagal kirim button:", response.status_code, response.text)
+            return False
+            
+    except Exception as e:
+        print("Error kirim button:", e)
+        return False
 
 def get_db_cursor():
     conn = psycopg2.connect(
@@ -579,7 +613,10 @@ if __name__ == "__main__":
         print("Koneksi PostgreSQL OK.")
         print("Sistem siap!")
         print("Silakan scan QR Code... (CTRL+C untuk berhenti)")
-        
+        send_telegram_buttons(
+            TELEGRAM_BOT_TOKEN, 
+            TELEGRAM_CHAT_ID, 
+        )
         while True:
             data = input().strip()
             if not data: 

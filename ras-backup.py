@@ -472,7 +472,7 @@ def send_telegram_buttons(bot_token: str, chat_id: str, resi_code: str, barang: 
         print("Error kirim button:", e)
         return False
     
-def send_telegram_buttons(bot_token: str, chat_id: str):
+def send_telegram_pintu(bot_token: str, chat_id: str):
     url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
     
     keyboard = {
@@ -613,7 +613,7 @@ if __name__ == "__main__":
         print("Koneksi PostgreSQL OK.")
         print("Sistem siap!")
         print("Silakan scan QR Code... (CTRL+C untuk berhenti)")
-        send_telegram_buttons(
+        send_telegram_pintu(
             TELEGRAM_BOT_TOKEN, 
             TELEGRAM_CHAT_ID, 
         )

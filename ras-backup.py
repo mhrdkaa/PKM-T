@@ -194,10 +194,10 @@ def handle_telegram_callbacks():
                             
                             if callback_data.startswith("buka_1"):
                                 new_text = "Kisi 1 DIPILIH\nMengirim perintah ke sistem..."
-                                kisi_command = "R1A"
+                                kisi_command = "buka_1"
                             elif callback_data.startswith("buka_2"):
                                 new_text = "KISI 2 DIPILIH\nMengirim perintah ke sistem..."
-                                kisi_command = "R2A"
+                                kisi_command = "buka_2"
                             elif callback_data.startswith("R3A"):
                                 new_text = "Pintu Atas DIPILIH\nMengirim perintah ke sistem..."
                                 kisi_command = "R3A"

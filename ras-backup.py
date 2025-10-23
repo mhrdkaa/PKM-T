@@ -12,7 +12,6 @@ try:
     load_dotenv()
 except Exception:
     pass
-
 IOT_PORT = "/dev/ttyUSB0"  
 IOT_BAUD = 115200
 POSTGRES_HOST = os.getenv("POSTGRES_HOST")
@@ -33,7 +32,6 @@ ZONE_POLYGON = np.array([
     [1, 1],
     [0, 1]
 ])
-
 def get_serial_connection():
     global ser_instance
     with serial_lock:
@@ -330,7 +328,6 @@ def process_frame_with_yolo(frame, model, frame_width=640, frame_height=480):
 def list_available_cameras(max_test=3):
     available_cameras = []
     print("Mencari kamera yang tersedia...")
-    
     for i in range(max_test):
         cap = cv2.VideoCapture(i)
         if cap.isOpened():
@@ -541,7 +538,6 @@ if __name__ == "__main__":
     try:
         print("Starting application on Raspberry Pi...")
         
-        print("\n=== TEST KONEKSI SERIAL ===")
         serial_ok = test_serial_connection()
         if not serial_ok:
             print("Peringatan: Koneksi serial bermasalah, sistem tetap berjalan...")
@@ -624,20 +620,15 @@ if __name__ == "__main__":
                     
                     if photo_success:
                         print("Foto utama berhasil terkirim ke Telegram.")
-                        
                         if is_cod:
                             print("Paket COD - Menunggu sinyal button dari Arduino...")
-                            
                             if tunggu_perintah_dari_arduino():
                                 print("Mengambil gambar YOLO...")
-                                
                                 if yolo_model is not None:
                                     yolo_path, detection_count = capture_yolo_frame(yolo_camera, yolo_model)
                                     print(f"Gambar YOLO tersimpan: {yolo_path}")
-                                    
                                     yolo_caption = f"YOLO DETECTION\nDetections: {detection_count}\nTime: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
                                     yolo_success = send_telegram_photos(TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, [yolo_path], yolo_caption)
-                                    
                                     if yolo_success:
                                         print("Gambar YOLO berhasil dikirim")
                                         print("Mengirim inline button ke Telegram...")
@@ -669,7 +660,14 @@ if __name__ == "__main__":
                                 print("Tidak ada sinyal button dari Arduino")
                         else:
                             print("Paket NON COD - Proses selesai")
-                    
+                            print("YOLO model tidak tersedia, langsung kirim button")
+                            button_success = send_telegram_buttons(
+                                TELEGRAM_BOT_TOKEN, 
+                                TELEGRAM_CHAT_ID, 
+                                resi_val or data, 
+                                barang_val or "-",
+                                harga_display
+                            )
                     else:
                         print("Gagal kirim foto utama")
                     

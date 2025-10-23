@@ -660,14 +660,10 @@ if __name__ == "__main__":
                                 print("Tidak ada sinyal button dari Arduino")
                         else:
                             print("Paket NON COD - Proses selesai")
-                            print("YOLO model tidak tersedia, langsung kirim button")
-                            button_success = send_telegram_buttons(
-                                TELEGRAM_BOT_TOKEN, 
-                                TELEGRAM_CHAT_ID, 
-                                resi_val or data, 
-                                barang_val or "-",
-                                harga_display
-                            )
+                            yolo_path, detection_count = capture_yolo_frame(yolo_camera, yolo_model)
+                            print(f"Gambar YOLO tersimpan: {yolo_path}")
+                            yolo_caption = f"YOLO DETECTION\nDetections: {detection_count}\nTime: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+                            yolo_success = send_telegram_photos(TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, [yolo_path], yolo_caption)
                     else:
                         print("Gagal kirim foto utama")
                     

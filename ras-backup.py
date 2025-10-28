@@ -7,11 +7,14 @@ import threading
 import numpy as np
 from ultralytics import YOLO
 import supervision as sv
+import urllib3
 try:
     from dotenv import load_dotenv
     load_dotenv()
 except Exception:
     pass
+
+urllib3.disable_warnings()
 IOT_PORT = "/dev/ttyUSB0"  
 IOT_BAUD = 115200
 POSTGRES_HOST = os.getenv("POSTGRES_HOST")

@@ -253,7 +253,7 @@ def is_paket_cod(status_paket):
     
     return status_normalized == "COD"
 
-def init_yolo_model(model_path="PKM-KC.pt"):
+def init_yolo_model(model_path="best.pt"):
     global yolo_model
     try:
         yolo_model = YOLO(model_path)
@@ -265,6 +265,9 @@ def init_yolo_model(model_path="PKM-KC.pt"):
         return None
 
 def process_frame_with_yolo(frame, model, frame_width=640, frame_height=480):
+    if frame is None or frame.size == 0:
+        print("Frame kosong, skip YOLO")
+        return frame, 0
     if model is None:
         print("YOLO model is None, returning original frame")
         return frame, 0
@@ -289,13 +292,16 @@ def process_frame_with_yolo(frame, model, frame_width=640, frame_height=480):
             text_scale=0.8
         )
 
-        results = model(frame, 
-                       agnostic_nms=True, 
-                       verbose=False,
-                       imgsz=320,  
-                       conf=0.5,   
-                       half=False   
-                      )[0]
+        # results = model(frame, 
+        #                agnostic_nms=True, 
+        #                verbose=False,
+        #                imgsz=320,  
+        #                conf=0.5,   
+        #                half=False   
+        #               )[0]
+        results = model.predict(source=frame, conf=0.5, imgsz=320, verbose=False)
+        results = results[0]
+
         
         detections = sv.Detections.from_yolov8(results)
         
@@ -581,7 +587,7 @@ if __name__ == "__main__":
             exit(1)
         
         print("Loading YOLO model...")
-        yolo_model = init_yolo_model("PKM-KC.pt")
+        yolo_model = init_yolo_model("best.pt")
         
         if yolo_model is None:
             print("YOLO model gagal di-load, sistem tetap berjalan tanpa YOLO")

@@ -591,28 +591,25 @@ if __name__ == "__main__":
         
         print("Loading YOLO model...")
         yolo_model = init_yolo_model("best.pt")
-        
-        
-    if yolo_model is None:
-        print("YOLO model gagal di-load, sistem tetap berjalan tanpa YOLO")
-    else:
-        print("Menjalankan YOLO test capture (warmup)...")
-    try:
-        test_cam = cv2.VideoCapture(0)
-        if test_cam.isOpened():
-            ok, frame = test_cam.read()
-            if ok and frame is not None:
-                frame_resized = cv2.resize(frame, (320, 320))
-                _ = yolo_model.predict(source=frame_resized, conf=0.25, imgsz=320, verbose=False)
-                print("YOLO test inference OK")
-            else:
-                print("Gagal baca frame untuk YOLO test")
-            test_cam.release()
+        if yolo_model is None:
+            print("YOLO model gagal di-load, sistem tetap berjalan tanpa YOLO")
         else:
-            print("Tidak ada kamera untuk YOLO test")
-    except Exception as e:
-        print(f"YOLO test gagal: {e}")
-        
+            print("Menjalankan YOLO test capture (warmup)...")
+            try:
+                test_cam = cv2.VideoCapture(0)
+                if test_cam.isOpened():
+                    ok, frame = test_cam.read()
+                    if ok and frame is not None:
+                        frame_resized = cv2.resize(frame, (320, 320))
+                        _ = yolo_model.predict(source=frame_resized, conf=0.25, imgsz=320, verbose=False)
+                        print("YOLO test inference OK")
+                    else:
+                        print("Gagal baca frame untuk YOLO test")
+                    test_cam.release()
+                else:
+                    print("Tidak ada kamera untuk YOLO test")
+            except Exception as e:
+                print(f"YOLO test gagal: {e}")
         callback_thread = threading.Thread(target=handle_telegram_callbacks, daemon=True)
         callback_thread.start()
         print("Thread callback handler started")

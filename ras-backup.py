@@ -596,7 +596,7 @@ if __name__ == "__main__":
         else:
             print("Menjalankan YOLO test capture (warmup)...")
             try:
-                test_cam = cv2.VideoCapture(0)
+                test_cam = cv2.VideoCapture(2)
                 if test_cam.isOpened():
                     ok, frame = test_cam.read()
                     if ok and frame is not None:

@@ -270,11 +270,21 @@ def process_frame_with_yolo(frame, model, frame_width=640, frame_height=480):
         print("YOLO model is None, returning original frame")
         return frame, 0
     try:
-        original_height, original_width = frame.shape[:2]
-        if original_width > 640:
+        if frame.shape[1] > 640:
             frame = cv2.resize(frame, (640, 480))
             frame_width, frame_height = 640, 480
+        results = model.predict(source=frame, conf=0.5, imgsz=320, verbose=False)[0]
+        detections = sv.Detections.from_ultralytics(results)
+        labels = [
+            f"{results.names[class_id]} {confidence:.2f}"
+            for _, confidence, class_id, _ in detections
+        ]
         box_annotator = sv.BoxAnnotator(thickness=1)
+        annotated_frame = box_annotator.annotate(
+            scene=frame.copy(),
+            detections=detections,
+            labels=labels
+        )
         zone_polygon = (ZONE_POLYGON * np.array([frame_width, frame_height])).astype(int)
         zone = sv.PolygonZone(polygon=zone_polygon)
         zone_annotator = sv.PolygonZoneAnnotator(
@@ -283,30 +293,27 @@ def process_frame_with_yolo(frame, model, frame_width=640, frame_height=480):
             thickness=1,
             text_scale=0.8
         )
-
-        results = model.predict(source=frame, conf=0.5, imgsz=320, verbose=False)
-        results = results[0]
-        detections = sv.Detections.from_yolov8(results)
-        labels = [
-            f"{model.model.names[class_id]} {confidence:0.2f}"
-            for _, confidence, class_id, _
-            in detections
-        ]
-        annotated_frame = box_annotator.annotate(
-            scene=frame.copy(),
-            detections=detections,
-            labels=labels
-        )
         zone.trigger(detections=detections)
         annotated_frame = zone_annotator.annotate(scene=annotated_frame)
+
         detection_count = len(detections)
-        cv2.putText(annotated_frame, f"Detections: {detection_count}", (10, frame_height - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
+        cv2.putText(
+            annotated_frame,
+            f"Detections: {detection_count}",
+            (10, frame_height - 10),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.5,
+            (0, 255, 0),
+            1
+        )
         print(f"YOLO processing successful - Detections: {detection_count}")
         return annotated_frame, detection_count
     except Exception as e:
         print(f"YOLO processing error: {e}")
-        cv2.putText(frame, "YOLO Error - Original Frame", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
+        cv2.putText(frame, "YOLO Error - Original Frame", (10, 30),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
         return frame, 0
+
 
 def list_available_cameras(max_test=3):
     available_cameras = []
@@ -587,7 +594,7 @@ if __name__ == "__main__":
                         overlay_text=f"RESI: {resi_val or data}"
                     )
                     print(f"Gambar utama tersimpan: {img_path}")
-                    serial_success = send_serial_data("R5A")
+                    serial_success = send_serial_data("R3A")
                     photo_success = send_telegram_photos(TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, [img_path], caption=caption)
                     if photo_success:
                         print("Foto utama berhasil terkirim ke Telegram.")

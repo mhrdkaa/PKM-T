@@ -179,10 +179,10 @@ def handle_telegram_callbacks():
                             edit_url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/editMessageText"
                             if callback_data.startswith("buka_1"):
                                 new_text = "Kisi 1 DIPILIH\nMengirim perintah ke sistem..."
-                                kisi_command = "buka_1"
+                                kisi_command = "buka_2"
                             elif callback_data.startswith("buka_2"):
                                 new_text = "KISI 2 DIPILIH\nMengirim perintah ke sistem..."
-                                kisi_command = "buka_2"
+                                kisi_command = "buka_1"
                             elif callback_data.startswith("R5A"):
                                 new_text = "Pintu Bawah DIPILIH\nMengirim perintah ke sistem..."
                                 kisi_command = "R5A"

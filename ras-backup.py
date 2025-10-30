@@ -183,15 +183,15 @@ def handle_telegram_callbacks():
                             elif callback_data.startswith("buka_2"):
                                 new_text = "KISI 2 DIPILIH\nMengirim perintah ke sistem..."
                                 kisi_command = "buka_2"
-                            elif callback_data.startswith("R3A"):
-                                new_text = "Pintu Atas DIPILIH\nMengirim perintah ke sistem..."
-                                kisi_command = "R3A"
-                            elif callback_data.startswith("R4A"):
-                                new_text = "Pintu Belakang\nMengirim perintah ke sistem..."
-                                kisi_command = "R4A"
                             elif callback_data.startswith("R5A"):
-                                new_text = "Pintu Utama\nMengirim perintah ke sistem..."
+                                new_text = "Pintu Bawah DIPILIH\nMengirim perintah ke sistem..."
                                 kisi_command = "R5A"
+                            elif callback_data.startswith("R4A"):
+                                new_text = "Pintu Atas\nMengirim perintah ke sistem..."
+                                kisi_command = "R4A"
+                            elif callback_data.startswith("R3A"):
+                                new_text = "Pintu Utama\nMengirim perintah ke sistem..."
+                                kisi_command = "R3A"
                             else:
                                 continue
                             edit_data = {
@@ -279,10 +279,11 @@ def process_frame_with_yolo(frame, model, frame_width=640, frame_height=480):
         zone = sv.PolygonZone(polygon=zone_polygon)
         zone_annotator = sv.PolygonZoneAnnotator(
             zone=zone,
-            color=sv.Color.red(),
+            color=sv.Color.RED,
             thickness=1,
             text_scale=0.8
         )
+
         results = model.predict(source=frame, conf=0.5, imgsz=320, verbose=False)
         results = results[0]
         detections = sv.Detections.from_yolov8(results)

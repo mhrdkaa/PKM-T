@@ -448,8 +448,8 @@ def send_telegram_pintu(bot_token: str, chat_id: str):
     keyboard = {
         "inline_keyboard": [
             [
-                {"text": "BUKA PINTU ATAS", "callback_data": f"R3A"},
-                {"text": "BUKA PINTU BAWAH", "callback_data": f"R4A"}
+                {"text": "BUKA PINTU ATAS", "callback_data": f"R4A"},
+                {"text": "BUKA PINTU BAWAH", "callback_data": f"R5A"}
             ]
         ]
     }

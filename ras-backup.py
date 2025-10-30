@@ -269,31 +269,37 @@ def process_frame_with_yolo(frame, model, frame_width=640, frame_height=480):
     if model is None:
         print("YOLO model is None, returning original frame")
         return frame, 0
+
     try:
+        # Resize agar efisien
         if frame.shape[1] > 640:
             frame = cv2.resize(frame, (640, 480))
             frame_width, frame_height = 640, 480
+
+        # Jalankan YOLO inference
         results = model.predict(source=frame, conf=0.5, imgsz=320, verbose=False)[0]
         detections = sv.Detections.from_ultralytics(results)
+
+        # Buat bounding box
+        box_annotator = sv.BoxAnnotator(thickness=1)
+        annotated_frame = box_annotator.annotate(scene=frame.copy(), detections=detections)
+
+        # Tambah label teks
+        label_annotator = sv.LabelAnnotator()
         labels = [
             f"{results.names[int(class_id)]} {confidence:.2f}"
             for class_id, confidence in zip(detections.class_id, detections.confidence)
         ]
-
-        box_annotator = sv.BoxAnnotator(thickness=1)
-        annotated_frame = box_annotator.annotate(
-            scene=frame.copy(),
+        annotated_frame = label_annotator.annotate(
+            scene=annotated_frame,
             detections=detections,
             labels=labels
         )
+
+        # Tambahkan polygon zone (opsional)
         zone_polygon = (ZONE_POLYGON * np.array([frame_width, frame_height])).astype(int)
         zone = sv.PolygonZone(polygon=zone_polygon)
-        zone_annotator = sv.PolygonZoneAnnotator(
-            zone=zone,
-            color=sv.Color.RED,
-            thickness=1,
-            text_scale=0.8
-        )
+        zone_annotator = sv.PolygonZoneAnnotator(zone=zone, color=sv.Color.RED)
         zone.trigger(detections=detections)
         annotated_frame = zone_annotator.annotate(scene=annotated_frame)
 
@@ -307,13 +313,16 @@ def process_frame_with_yolo(frame, model, frame_width=640, frame_height=480):
             (0, 255, 0),
             1
         )
+
         print(f"YOLO processing successful - Detections: {detection_count}")
         return annotated_frame, detection_count
+
     except Exception as e:
         print(f"YOLO processing error: {e}")
         cv2.putText(frame, "YOLO Error - Original Frame", (10, 30),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
         return frame, 0
+
 
 
 def list_available_cameras(max_test=3):

@@ -276,7 +276,7 @@ def process_frame_with_yolo(frame, model, frame_width=640, frame_height=480):
             frame_width, frame_height = 640, 480
         box_annotator = sv.BoxAnnotator(thickness=1)
         zone_polygon = (ZONE_POLYGON * np.array([frame_width, frame_height])).astype(int)
-        zone = sv.PolygonZone(polygon=zone_polygon, frame_resolution_wh=(frame_width, frame_height))
+        zone = sv.PolygonZone(polygon=zone_polygon)
         zone_annotator = sv.PolygonZoneAnnotator(
             zone=zone,
             color=sv.Color.red(),

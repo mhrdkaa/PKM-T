@@ -276,9 +276,10 @@ def process_frame_with_yolo(frame, model, frame_width=640, frame_height=480):
         results = model.predict(source=frame, conf=0.5, imgsz=320, verbose=False)[0]
         detections = sv.Detections.from_ultralytics(results)
         labels = [
-            f"{results.names[class_id]} {confidence:.2f}"
-            for _, confidence, class_id, _ in detections
+            f"{results.names[int(class_id)]} {confidence:.2f}"
+            for class_id, confidence in zip(detections.class_id, detections.confidence)
         ]
+
         box_annotator = sv.BoxAnnotator(thickness=1)
         annotated_frame = box_annotator.annotate(
             scene=frame.copy(),

@@ -7,11 +7,14 @@ import threading
 import numpy as np
 from ultralytics import YOLO
 import supervision as sv
+import urllib3
 try:
     from dotenv import load_dotenv
     load_dotenv()
 except Exception:
     pass
+
+urllib3.disable_warnings()
 IOT_PORT = "/dev/ttyUSB0"  
 IOT_BAUD = 115200
 POSTGRES_HOST = os.getenv("POSTGRES_HOST")
@@ -265,6 +268,9 @@ def init_yolo_model(model_path="best.pt"):
         return None
 
 def process_frame_with_yolo(frame, model, frame_width=640, frame_height=480):
+    if frame is None or frame.size == 0:
+        print("Frame kosong, skip YOLO")
+        return frame, 0
     if model is None:
         print("YOLO model is None, returning original frame")
         return frame, 0
@@ -275,10 +281,11 @@ def process_frame_with_yolo(frame, model, frame_width=640, frame_height=480):
             frame = cv2.resize(frame, (640, 480))
             frame_width, frame_height = 640, 480
         
-        box_annotator = sv.BoxAnnotator(
-            thickness=1,  
-            text_scale=0.5  
-        )
+        # box_annotator = sv.BoxAnnotator(
+        #     thickness=1,
+        #     text_thickness=1
+        # )
+        box_annotator = sv.BoxAnnotator(thickness=1)
 
         zone_polygon = (ZONE_POLYGON * np.array([frame_width, frame_height])).astype(int)
         zone = sv.PolygonZone(polygon=zone_polygon, frame_resolution_wh=(frame_width, frame_height))
@@ -289,13 +296,16 @@ def process_frame_with_yolo(frame, model, frame_width=640, frame_height=480):
             text_scale=0.8
         )
 
-        results = model(frame, 
-                       agnostic_nms=True, 
-                       verbose=False,
-                       imgsz=320,  
-                       conf=0.5,   
-                       half=False   
-                      )[0]
+        # results = model(frame, 
+        #                agnostic_nms=True, 
+        #                verbose=False,
+        #                imgsz=320,  
+        #                conf=0.5,   
+        #                half=False   
+        #               )[0]
+        results = model.predict(source=frame, conf=0.5, imgsz=320, verbose=False)
+        results = results[0]
+
         
         detections = sv.Detections.from_yolov8(results)
         
@@ -582,10 +592,25 @@ if __name__ == "__main__":
         
         print("Loading YOLO model...")
         yolo_model = init_yolo_model("best.pt")
-        
         if yolo_model is None:
             print("YOLO model gagal di-load, sistem tetap berjalan tanpa YOLO")
-        
+        else:
+            print("Menjalankan YOLO test capture (warmup)...")
+            try:
+                test_cam = cv2.VideoCapture(2)
+                if test_cam.isOpened():
+                    ok, frame = test_cam.read()
+                    if ok and frame is not None:
+                        frame_resized = cv2.resize(frame, (320, 320))
+                        _ = yolo_model.predict(source=frame_resized, conf=0.25, imgsz=320, verbose=False)
+                        print("YOLO test inference OK")
+                    else:
+                        print("Gagal baca frame untuk YOLO test")
+                    test_cam.release()
+                else:
+                    print("Tidak ada kamera untuk YOLO test")
+            except Exception as e:
+                print(f"YOLO test gagal: {e}")
         callback_thread = threading.Thread(target=handle_telegram_callbacks, daemon=True)
         callback_thread.start()
         print("Thread callback handler started")

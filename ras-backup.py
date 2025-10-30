@@ -511,8 +511,16 @@ if __name__ == "__main__":
     yolo_camera = None
     try:
         print("Starting application on Raspberry Pi...")
-        yolo_thread = threading.Thread(target=preload_yolo_model, args=("best.pt",), daemon=True)
-        yolo_thread.start()
+        print("[SYSTEM] Memuat YOLO model di awal...")
+        yolo_model = init_yolo_model("best.pt")
+        if yolo_model:
+            warmup_yolo_model(yolo_model)
+            with yolo_lock:
+                yolo_ready = True
+            print("[SYSTEM] YOLO siap digunakan sejak awal startup.")
+        else:
+            print("[SYSTEM] Gagal memuat YOLO di awal.")
+
         serial_ok = test_serial_connection()
         if not serial_ok:
             print("Peringatan: Koneksi serial bermasalah, sistem tetap berjalan...")

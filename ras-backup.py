@@ -15,7 +15,7 @@ except Exception:
     pass
 
 urllib3.disable_warnings()
-IOT_PORT = "/dev/ttyUSB0"  
+IOT_PORT = "/dev/ttyUSB1"  
 IOT_BAUD = 115200
 POSTGRES_HOST = os.getenv("POSTGRES_HOST")
 POSTGRES_USER = os.getenv("POSTGRES_USER")

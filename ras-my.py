@@ -474,13 +474,15 @@ def send_telegram_pintu(bot_token: str, chat_id: str):
 
 def get_db_cursor():
     conn = mysql.connector.connect(
-        host=POSTGRES_HOST,
+        host=POSTGRES_HOST,     
         user=POSTGRES_USER,
         password=POSTGRES_PASS,
         database=POSTGRES_DB,
         port=int(POSTGRES_PORT)
     )
-    return conn, conn.cursor(dictionary=True)
+    cursor = conn.cursor(dictionary=True)  
+    return conn, cursor
+
 
 def get_resi_detail(cursor, resi_code):
     try:

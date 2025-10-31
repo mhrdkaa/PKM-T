@@ -1,0 +1,693 @@
+import os, time, requests, cv2, psycopg2
+from datetime import datetime
+from decimal import Decimal, InvalidOperation
+import serial
+import json
+import threading
+import numpy as np
+from ultralytics import YOLO
+import supervision as sv
+import urllib3
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except Exception:
+    pass
+
+urllib3.disable_warnings()
+IOT_PORT = "/dev/ttyUSB0"  
+IOT_BAUD = 115200
+POSTGRES_HOST = os.getenv("POSTGRES_HOST")
+POSTGRES_USER = os.getenv("POSTGRES_USER")
+POSTGRES_PASS = os.getenv("POSTGRES_PASS")
+POSTGRES_DB   = os.getenv("POSTGRES_DB")
+POSTGRES_PORT = os.getenv("POSTGRES_PORT")
+
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+TELEGRAM_CHAT_ID   = os.getenv("TELEGRAM_CHAT_ID")
+callback_lock = threading.Lock()
+serial_lock = threading.Lock()
+ser_instance = None
+yolo_model = None
+yolo_ready = False
+yolo_lock = threading.Lock()
+ZONE_POLYGON = np.array([
+    [0, 0],
+    [1, 0],
+    [1, 1],
+    [0, 1]
+])
+
+def get_serial_connection():
+    global ser_instance
+    with serial_lock:
+        if ser_instance is None or not ser_instance.is_open:
+            try:
+                if ser_instance:
+                    ser_instance.close()
+                ser_instance = serial.Serial(
+                    IOT_PORT,
+                    IOT_BAUD,
+                    timeout=2,
+                    write_timeout=2,
+                    bytesize=serial.EIGHTBITS,
+                    parity=serial.PARITY_NONE,
+                    stopbits=serial.STOPBITS_ONE
+                )
+                print(f"Koneksi serial {IOT_PORT} dibuka")
+                time.sleep(3)
+                if ser_instance.in_waiting > 0:
+                    ser_instance.reset_input_buffer()
+                    ser_instance.reset_output_buffer()
+            except Exception as e:
+                print(f"Gagal buka koneksi serial: {e}")
+                ser_instance = None
+                return None
+        return ser_instance
+
+def close_serial_connection():
+    global ser_instance
+    with serial_lock:
+        if ser_instance and ser_instance.is_open:
+            ser_instance.close()
+            ser_instance = None
+            print("Koneksi serial ditutup")
+
+def read_serial_data():
+    ser = get_serial_connection()
+    if ser is None:
+        return ""
+    try:
+        if not ser.is_open:
+            print("Port serial tertutup, mencoba buka kembali...")
+            close_serial_connection()
+            ser = get_serial_connection()
+            if ser is None:
+                return ""
+        data_buffer = ""
+        bytes_to_read = ser.in_waiting
+        if bytes_to_read > 0:
+            byte_data = ser.read(bytes_to_read)
+            try:
+                data_buffer = byte_data.decode('utf-8', errors='ignore')
+                if data_buffer.strip():
+                    print(f"RAW SERIAL DATA: '{data_buffer.strip()}'")
+            except Exception as decode_error:
+                print(f"Error decode serial data: {decode_error}")
+        return data_buffer.strip()
+    except serial.SerialException as e:
+        print(f"SerialException dalam read_serial_data: {e}")
+        close_serial_connection()
+        return ""
+    except Exception as e:
+        print(f"Unexpected error baca serial: {e}")
+        return ""
+
+def send_serial_data(data):
+    ser = get_serial_connection()
+    if ser is None:
+        return False
+    try:
+        if not ser.is_open:
+            print("Port serial tertutup saat kirim, mencoba buka kembali...")
+            close_serial_connection()
+            ser = get_serial_connection()
+            if ser is None:
+                return False
+        command = f"{data}\n"
+        ser.write(command.encode())
+        ser.flush()
+        print(f"Data terkirim ke serial: '{data}'")
+        return True
+    except serial.SerialException as e:
+        print(f"SerialException dalam send_serial_data: {e}")
+        close_serial_connection()
+        return False
+    except Exception as e:
+        print(f"Error kirim serial: {e}")
+        return False
+
+def test_serial_connection():
+    print("Testing koneksi serial...")
+    close_serial_connection()
+    time.sleep(1)
+    ser = get_serial_connection()
+    if ser is None:
+        print("Gagal membuka koneksi serial")
+        return False
+    if send_serial_data("TEST"):
+        print("Berhasil kirim test data")
+    else:
+        print("Gagal kirim test data")
+        return False
+    print("Menunggu response dari Arduino...")
+    start_time = time.time()
+    while time.time() - start_time < 5:
+        data = read_serial_data()
+        if data:
+            print(f"Response diterima: {data}")
+            return True
+        time.sleep(0.5)
+    print("Tidak ada response dari Arduino (timeout)")
+    return True
+
+def handle_telegram_callbacks():
+    print("Memulai thread callback handler...")
+    last_update_id = 0
+    while True:
+        try:
+            url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/getUpdates"
+            params = {"timeout": 30, "offset": last_update_id + 1}
+            response = requests.get(url, params=params, timeout=35, verify=False)
+            if response.status_code == 200:
+                data = response.json()
+                if data.get("ok") and data.get("result"):
+                    for update in data["result"]:
+                        last_update_id = update["update_id"]
+                        if "callback_query" in update:
+                            callback_data = update["callback_query"]["data"]
+                            message_id = update["callback_query"]["message"]["message_id"]
+                            chat_id = update["callback_query"]["message"]["chat"]["id"]
+                            print(f"CALLBACK DITERIMA: {callback_data}")
+                            answer_url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/answerCallbackQuery"
+                            answer_data = {
+                                "callback_query_id": update["callback_query"]["id"],
+                                "text": f"Pilihan diterima: {callback_data}",
+                                "show_alert": False
+                            }
+                            requests.post(answer_url, json=answer_data, verify=False)
+                            edit_url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/editMessageText"
+                            if callback_data.startswith("buka_1"):
+                                new_text = "Kisi 1 DIPILIH\nMengirim perintah ke sistem..."
+                                kisi_command = "buka_2"
+                            elif callback_data.startswith("buka_2"):
+                                new_text = "KISI 2 DIPILIH\nMengirim perintah ke sistem..."
+                                kisi_command = "buka_1"
+                            elif callback_data.startswith("R5A"):
+                                new_text = "Pintu Bawah DIPILIH\nMengirim perintah ke sistem..."
+                                kisi_command = "R5A"
+                            elif callback_data.startswith("R4A"):
+                                new_text = "Pintu Atas\nMengirim perintah ke sistem..."
+                                kisi_command = "R4A"
+                            elif callback_data.startswith("R3A"):
+                                new_text = "Pintu Utama\nMengirim perintah ke sistem..."
+                                kisi_command = "R3A"
+                            else:
+                                continue
+                            edit_data = {
+                                "chat_id": chat_id,
+                                "message_id": message_id,
+                                "text": new_text,
+                                "parse_mode": "Markdown"
+                            }
+                            requests.post(edit_url, json=edit_data, verify=False)
+                            print(f"Mengirim {kisi_command} ke Arduino...")
+                            send_serial_data(kisi_command)
+            time.sleep(1)
+        except Exception as e:
+            print(f"Error dalam handle_telegram_callbacks: {e}")
+            time.sleep(5)
+
+def format_rupiah(value):
+    if value in (None, ""):
+        return "-"
+    try:
+        if not isinstance(value, Decimal):
+            value = Decimal(str(value))
+        s = f"{value:,.0f}".replace(",", ".")
+        return s
+    except (InvalidOperation, Exception):
+        return str(value)
+
+def pick_first(d: dict, keys):
+    for k in keys:
+        if k in d and d[k] not in (None, "", b""):
+            return d[k]
+    return None
+
+def is_paket_cod(status_paket):
+    if not status_paket:
+        return False
+    status_normalized = str(status_paket).upper().strip()
+    print(f"DEBUG is_paket_cod: input='{status_paket}', normalized='{status_normalized}', result={status_normalized == 'COD'}")
+    return status_normalized == "COD"
+
+def init_yolo_model(model_path="best.pt"):
+    try:
+        model = YOLO(model_path)
+        print(f"[YOLO] Model loaded: {model_path}")
+        return model
+    except Exception as e:
+        print(f"[YOLO] Failed to load model: {e}")
+        return None
+
+def warmup_yolo_model(model):
+    try:
+        dummy = np.zeros((320, 320, 3), dtype=np.uint8)
+        _ = model.predict(source=dummy, conf=0.25, imgsz=320, verbose=False)
+        print("[YOLO] Warmup selesai, model siap digunakan.")
+    except Exception as e:
+        print(f"[YOLO] Warmup gagal: {e}")
+
+def preload_yolo_model(model_path="best.pt"):
+    global yolo_model, yolo_ready
+    print("[YOLO] Memulai preload di background...")
+    model = init_yolo_model(model_path)
+    if model:
+        warmup_yolo_model(model)
+        with yolo_lock:
+            yolo_model = model
+            yolo_ready = True
+        print("[YOLO] Preload selesai, model siap dipakai.")
+    else:
+        print("[YOLO] Gagal preload model")
+
+def process_frame_with_yolo(frame, model, frame_width=640, frame_height=480):
+    if frame is None or frame.size == 0:
+        print("Frame kosong, skip YOLO")
+        return frame, 0
+    if model is None:
+        print("YOLO model is None, returning original frame")
+        return frame, 0
+
+    try:
+        # Resize agar efisien
+        if frame.shape[1] > 640:
+            frame = cv2.resize(frame, (640, 480))
+            frame_width, frame_height = 640, 480
+
+        # Jalankan YOLO inference
+        results = model.predict(source=frame, conf=0.5, imgsz=320, verbose=False)[0]
+        detections = sv.Detections.from_ultralytics(results)
+
+        # Buat bounding box
+        box_annotator = sv.BoxAnnotator(thickness=1)
+        annotated_frame = box_annotator.annotate(scene=frame.copy(), detections=detections)
+
+        # Tambah label teks
+        label_annotator = sv.LabelAnnotator()
+        labels = [
+            f"{results.names[int(class_id)]} {confidence:.2f}"
+            for class_id, confidence in zip(detections.class_id, detections.confidence)
+        ]
+        annotated_frame = label_annotator.annotate(
+            scene=annotated_frame,
+            detections=detections,
+            labels=labels
+        )
+
+        # Tambahkan polygon zone (opsional)
+        zone_polygon = (ZONE_POLYGON * np.array([frame_width, frame_height])).astype(int)
+        zone = sv.PolygonZone(polygon=zone_polygon)
+        zone_annotator = sv.PolygonZoneAnnotator(zone=zone, color=sv.Color.RED)
+        zone.trigger(detections=detections)
+        annotated_frame = zone_annotator.annotate(scene=annotated_frame)
+
+        detection_count = len(detections)
+        cv2.putText(
+            annotated_frame,
+            f"Detections: {detection_count}",
+            (10, frame_height - 10),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.5,
+            (0, 255, 0),
+            1
+        )
+
+        print(f"YOLO processing successful - Detections: {detection_count}")
+        return annotated_frame, detection_count
+
+    except Exception as e:
+        print(f"YOLO processing error: {e}")
+        cv2.putText(frame, "YOLO Error - Original Frame", (10, 30),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
+        return frame, 0
+
+
+
+def list_available_cameras(max_test=3):
+    available_cameras = []
+    print("Mencari kamera yang tersedia...")
+    for i in range(max_test):
+        cap = cv2.VideoCapture(i)
+        if cap.isOpened():
+            ret, frame = cap.read()
+            if ret and frame is not None:
+                available_cameras.append(i)
+                print(f"Kamera {i} ditemukan - Resolusi: {frame.shape[1]}x{frame.shape[0]}")
+            else:
+                print(f"Kamera {i} terdeteksi tapi tidak bisa baca frame")
+            cap.release()
+        else:
+            print(f"Kamera {i} tidak terdeteksi")
+        time.sleep(0.5)
+    return available_cameras
+
+def init_camera(index=0, width=640, height=480, warmup_frames=8, camera_name="Kamera"):
+    cam = cv2.VideoCapture(index)
+    if not cam.isOpened():
+        raise RuntimeError(f"{camera_name} {index} tidak dapat dibuka.")
+    cam.set(cv2.CAP_PROP_FRAME_WIDTH, width)
+    cam.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
+    cam.set(cv2.CAP_PROP_FPS, 15)
+    cam.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+    for i in range(warmup_frames):
+        ret, frame = cam.read()
+        if ret:
+            print(f"{camera_name} warmup {i+1}/{warmup_frames} - Brightness: {frame.mean():.1f}")
+        time.sleep(0.05)
+    actual_width = int(cam.get(cv2.CAP_PROP_FRAME_WIDTH))
+    actual_height = int(cam.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    print(f"{camera_name} {index} siap - Resolusi: {actual_width}x{actual_height}")
+    return cam
+
+def capture_normal_frame(cam, save_dir="captures", prefix="normal", overlay_text=None):
+    os.makedirs(save_dir, exist_ok=True)
+    ok, frame = cam.read()
+    if not ok or frame is None:
+        raise RuntimeError("Gagal membaca frame dari kamera.")
+    if overlay_text:
+        ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        text = f"{overlay_text} | {ts}"
+        cv2.putText(frame, text, (18, 40), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2, cv2.LINE_AA)
+    fname = f"{prefix}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.jpg"
+    fpath = os.path.join(save_dir, fname)
+    ok = cv2.imwrite(fpath, frame, [int(cv2.IMWRITE_JPEG_QUALITY), 85])
+    if not ok:
+        raise RuntimeError("Gagal menyimpan gambar.")
+    return fpath
+
+def capture_yolo_frame(yolo_cam, yolo_model, save_dir="yolo_captures", prefix="yolo"):
+    os.makedirs(save_dir, exist_ok=True)
+    ok, frame = yolo_cam.read()
+    if not ok or frame is None:
+        raise RuntimeError("Gagal membaca frame dari kamera YOLO.")
+    print(f"Capturing YOLO frame - Brightness: {frame.mean():.1f}")
+    processed_frame, detection_count = process_frame_with_yolo(frame, yolo_model)
+    fname = f"{prefix}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.jpg"
+    fpath = os.path.join(save_dir, fname)
+    ok = cv2.imwrite(fpath, processed_frame, [int(cv2.IMWRITE_JPEG_QUALITY), 80])
+    if not ok:
+        raise RuntimeError("Gagal menyimpan gambar YOLO.")
+    print(f"YOLO frame saved - Detections: {detection_count}")
+    return fpath, detection_count
+
+def send_telegram_photos(bot_token: str, chat_id: str, image_paths: list, caption: str = "") -> bool:
+    if not image_paths:
+        return False
+    success_count = 0
+    for img_path in image_paths:
+        if not os.path.exists(img_path):
+            continue
+        url = f"https://api.telegram.org/bot{bot_token}/sendPhoto"
+        try:
+            with open(img_path, "rb") as f:
+                files = {"photo": f}
+                data = {"chat_id": chat_id, "caption": caption}
+                r = requests.post(url, data=data, files=files, timeout=30, verify=False)
+            if r.status_code == 200:
+                print(f"Foto terkirim: {os.path.basename(img_path)}")
+                success_count += 1
+            else:
+                print(f"Gagal kirim foto: {r.status_code}")
+        except Exception as e:
+            print(f"Error kirim foto: {e}")
+    return success_count > 0
+
+def send_telegram_buttons(bot_token: str, chat_id: str, resi_code: str, barang: str, harga: str):
+    url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
+    keyboard = {
+        "inline_keyboard": [
+            [
+                {"text": "KISI 1", "callback_data": f"buka_1"},
+                {"text": "KISI 2", "callback_data": f"buka_2"}
+            ]
+        ]
+    }
+    message_text = f"**PILIH KISI UNTUK:**\nResi: `{resi_code}`\nBarang: {barang}\nHarga: Rp {format_rupiah(harga)}\n\nKlik salah satu button:"
+    try:
+        data = {
+            "chat_id": chat_id,
+            "text": message_text,
+            "parse_mode": "Markdown",
+            "reply_markup": json.dumps(keyboard)
+        }
+        response = requests.post(url, json=data, timeout=10, verify=False)
+        if response.status_code == 200:
+            print("Inline button berhasil dikirim!")
+            return True
+        else:
+            print("Gagal kirim button:", response.status_code, response.text)
+            return False
+    except Exception as e:
+        print("Error kirim button:", e)
+        return False
+
+def send_telegram_pintu(bot_token: str, chat_id: str):
+    url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
+    keyboard = {
+        "inline_keyboard": [
+            [
+                {"text": "BUKA PINTU ATAS", "callback_data": f"R4A"},
+                {"text": "BUKA PINTU BAWAH", "callback_data": f"R5A"}
+            ]
+        ]
+    }
+    message_text = f"PILIH NIH"
+    try:
+        data = {
+            "chat_id": chat_id,
+            "text": message_text,
+            "reply_markup": json.dumps(keyboard)
+        }
+        response = requests.post(url, json=data, timeout=10, verify=False)
+        if response.status_code == 200:
+            print("berhasil dikirim!")
+            return True
+        else:
+            print("Gagal kirim button:", response.status_code, response.text)
+            return False
+    except Exception as e:
+        print("Error kirim button:", e)
+        return False
+
+def get_db_cursor():
+    conn = mysql.connector.connect(
+        host=POSTGRES_HOST,
+        user=POSTGRES_USER,
+        password=POSTGRES_PASS,
+        database=POSTGRES_DB,
+        port=int(POSTGRES_PORT)
+    )
+    return conn, conn.cursor(dictionary=True)
+
+def get_resi_detail(cursor, resi_code):
+    cursor.execute("SELECT * FROM paket WHERE no_resi = %s LIMIT 1", (resi_code,))
+    result = cursor.fetchone()
+    if result:
+        columns = [desc[0] for desc in cursor.description]
+        return dict(zip(columns, result))
+    return None
+
+def test_telegram_connection():
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/getMe"
+    try:
+        response = requests.get(url, timeout=10, verify=False)
+        if response.status_code == 200:
+            print("Koneksi Telegram BOT OK")
+            return True
+        else:
+            print(f"Telegram Bot Error: {response.status_code}")
+            return False
+    except Exception as e:
+        print(f"Error koneksi Telegram: {e}")
+        return False
+
+def tunggu_perintah_dari_arduino(timeout=60):
+    try:
+        print("Menunggu sinyal 'button' dari nodemcu...")
+        start = time.time()
+        last_serial_check = 0
+        while time.time() - start < timeout:
+            current_time = time.time()
+            if current_time - last_serial_check >= 0.5:
+                data = read_serial_data()
+                last_serial_check = current_time
+                if data and "button" in data.lower():
+                    print("Sinyal button diterima dari Arduino!")
+                    return True
+            time.sleep(0.1)
+        print("Timeout - Tidak ada sinyal 'button' dari Arduino")
+        return False
+    except Exception as e:
+        print(f"Gagal baca dari NODEMCU: {e}")
+        return False
+
+if __name__ == "__main__":
+    conn = cursor = None
+    main_camera = None
+    yolo_camera = None
+    try:
+        print("Starting application on Raspberry Pi...")
+        print("[SYSTEM] Memuat YOLO model di awal...")
+        yolo_model = init_yolo_model("best.pt")
+        if yolo_model:
+            warmup_yolo_model(yolo_model)
+            with yolo_lock:
+                yolo_ready = True
+            print("[SYSTEM] YOLO siap digunakan sejak awal startup.")
+        else:
+            print("[SYSTEM] Gagal memuat YOLO di awal.")
+
+        serial_ok = test_serial_connection()
+        if not serial_ok:
+            print("Peringatan: Koneksi serial bermasalah, sistem tetap berjalan...")
+        if not test_telegram_connection():
+            print("Tidak bisa melanjutkan, bot Telegram tidak bisa diakses")
+            exit(1)
+        callback_thread = threading.Thread(target=handle_telegram_callbacks, daemon=True)
+        callback_thread.start()
+        print("Thread callback handler started")
+        available_cams = list_available_cameras()
+        if not available_cams:
+            print("Tidak ada kamera yang terdeteksi!")
+            exit(1)
+        print(f"Kamera yang tersedia: {available_cams}")
+        main_camera = init_camera(available_cams[0], camera_name="Main Camera")
+        if len(available_cams) > 1:
+            try:
+                yolo_camera = init_camera(available_cams[1], camera_name="YOLO Camera")
+                print("Kamera YOLO siap (kamera terpisah)")
+            except Exception as e:
+                print(f"Gagal inisialisasi kamera YOLO terpisah: {e}")
+                yolo_camera = main_camera
+                print("Menggunakan kamera utama untuk YOLO")
+        else:
+            print("Hanya 1 kamera terdeteksi - menggunakan kamera utama untuk YOLO juga")
+            yolo_camera = main_camera
+        conn, cursor = get_db_cursor()
+        print("Koneksi PostgreSQL OK.")
+        print("Sistem siap!")
+        print("Silakan scan QR Code... (CTRL+C untuk berhenti)")
+        send_telegram_pintu(
+            TELEGRAM_BOT_TOKEN,
+            TELEGRAM_CHAT_ID,
+        )
+        while True:
+            data = input().strip()
+            if not data:
+                continue
+            print("Hasil Scan:", data)
+            row = get_resi_detail(cursor, data)
+            found = row is not None
+            if found:
+                resi_val   = pick_first(row, ["no_resi", "resi"])
+                barang_val = pick_first(row, ["nama_paket", "barang", "nama_barang"])
+                harga_raw  = pick_first(row, ["harga", "harga_barang"])
+                status_val = pick_first(row, ["status_paket", "status"])
+                harga_display = harga_raw if harga_raw is not None else "0"
+                is_cod = is_paket_cod(status_val)
+                cap_lines = [
+                    "Resi terverifikasi",
+                    f"Resi  : {resi_val or '-'}",
+                    f"Paket : {barang_val or '-'}",
+                    f"Harga : Rp {format_rupiah(harga_display)}",
+                    f"Status: {status_val or '-'}",
+                    f"Tipe  : {'COD' if is_cod else 'NON COD'}"
+                ]
+                caption = "\n".join(cap_lines)
+                try:
+                    img_path = capture_normal_frame(
+                        main_camera,
+                        save_dir="captures",
+                        prefix="resi",
+                        overlay_text=f"RESI: {resi_val or data}"
+                    )
+                    print(f"Gambar utama tersimpan: {img_path}")
+                    serial_success = send_serial_data("R3A")
+                    photo_success = send_telegram_photos(TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, [img_path], caption=caption)
+                    if photo_success:
+                        print("Foto utama berhasil terkirim ke Telegram.")
+                        if is_cod:
+                            print("Paket COD - Menunggu sinyal button dari Arduino...")
+                            if tunggu_perintah_dari_arduino():
+                                print("Mengambil gambar YOLO...")
+                                if yolo_ready and yolo_model is not None:
+                                    try:
+                                        yolo_path, detection_count = capture_yolo_frame(yolo_camera, yolo_model)
+                                        print(f"Gambar YOLO tersimpan: {yolo_path}")
+                                        yolo_caption = f"YOLO DETECTION\nDetections: {detection_count}\nTime: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+                                        yolo_success = send_telegram_photos(TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, [yolo_path], yolo_caption)
+                                        if yolo_success:
+                                            print("Gambar YOLO berhasil dikirim")
+                                            print("Mengirim inline button ke Telegram...")
+                                            button_success = send_telegram_buttons(
+                                                TELEGRAM_BOT_TOKEN,
+                                                TELEGRAM_CHAT_ID,
+                                                resi_val or data,
+                                                barang_val or "-",
+                                                harga_display
+                                            )
+                                            if button_success:
+                                                print("Inline button berhasil dikirim!")
+                                                print("User bisa klik button KISI 1 atau KISI 2")
+                                            else:
+                                                print("Gagal kirim button")
+                                        else:
+                                            print("Gagal kirim gambar YOLO")
+                                    except Exception as e:
+                                        print(f"Gagal ambil/generate gambar YOLO: {e}")
+                                        button_success = send_telegram_buttons(
+                                            TELEGRAM_BOT_TOKEN,
+                                            TELEGRAM_CHAT_ID,
+                                            resi_val or data,
+                                            barang_val or "-",
+                                            harga_display
+                                        )
+                                else:
+                                    print("YOLO model belum siap atau tidak tersedia, langsung kirim button")
+                                    button_success = send_telegram_buttons(
+                                        TELEGRAM_BOT_TOKEN,
+                                        TELEGRAM_CHAT_ID,
+                                        resi_val or data,
+                                        barang_val or "-",
+                                        harga_display
+                                    )
+                            else:
+                                print("Tidak ada sinyal button dari Arduino")
+                        else:
+                            print("Paket NON COD - Proses selesai")
+                            if yolo_ready and yolo_model is not None:
+                                try:
+                                    yolo_path, detection_count = capture_yolo_frame(yolo_camera, yolo_model)
+                                    print(f"Gambar YOLO tersimpan: {yolo_path}")
+                                    yolo_caption = f"YOLO DETECTION\nDetections: {detection_count}\nTime: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+                                    yolo_success = send_telegram_photos(TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, [yolo_path], yolo_caption)
+                                    if yolo_success:
+                                        print("Gambar YOLO berhasil dikirim")
+                                except Exception as e:
+                                    print(f"Gagal ambil/generate gambar YOLO: {e}")
+                            else:
+                                print("YOLO model belum siap atau tidak tersedia, skip pengambilan YOLO")
+                    else:
+                        print("Gagal kirim foto utama")
+                except Exception as e:
+                    print("Gagal proses pengiriman:", e)
+            else:
+                print("Resi tidak ditemukan di database")
+    except KeyboardInterrupt:
+        print("\nProgram dihentikan oleh pengguna.")
+    except Exception as e:
+        print("Error utama:", e)
+    finally:
+        try:
+            if cursor: cursor.close()
+            if conn: conn.close()
+        except: pass
+        if main_camera and main_camera.isOpened():
+            main_camera.release()
+            print("Kamera utama di-release")
+        if yolo_camera and yolo_camera.isOpened() and yolo_camera != main_camera:
+            yolo_camera.release()
+            print("Kamera YOLO di-release")
+        close_serial_connection()

@@ -2,6 +2,7 @@ import os, time, requests, cv2, psycopg2
 from datetime import datetime
 from decimal import Decimal, InvalidOperation
 import serial
+import mysql.connector
 import json
 import threading
 import numpy as np

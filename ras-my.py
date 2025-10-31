@@ -483,12 +483,20 @@ def get_db_cursor():
     return conn, conn.cursor(dictionary=True)
 
 def get_resi_detail(cursor, resi_code):
-    cursor.execute("SELECT * FROM paket WHERE no_resi = %s LIMIT 1", (resi_code,))
-    result = cursor.fetchone()
-    if result:
-        columns = [desc[0] for desc in cursor.description]
-        return dict(zip(columns, result))
-    return None
+    try:
+        query = "SELECT * FROM paket WHERE no_resi = %s LIMIT 1"
+        cursor.execute(query, (resi_code,))
+        row = cursor.fetchone()
+        if not row:
+            print(f"[DB] Resi {resi_code} tidak ditemukan di tabel paket.")
+            return None
+
+        print(f"[DB] Data paket ditemukan: {row}")
+        return row
+    except mysql.connector.Error as err:
+        print(f"[DB] Query error: {err}")
+        return None
+
 
 def test_telegram_connection():
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/getMe"
